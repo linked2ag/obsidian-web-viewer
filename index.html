@@ -1,0 +1,2666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Obsidian Web Viewer</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons for premium native-app appearance -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Marked.js for excellent Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- D3.js for high-fidelity interactive Graph Views -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap');
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            background-color: var(--bg-primary);
+            color: var(--text-normal);
+        }
+
+        /* Obsidian Light Theme Design Tokens */
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f6f6f6;
+            --bg-ribbon: #ededed;
+            --border-color: #dfdfdf;
+            --text-normal: #171717;
+            --text-muted: #646464;
+            --accent: #7f46fc;
+            --accent-hover: #632cd6;
+            --scrollbar-thumb: #c4c4c4;
+            --code-bg: #f5f5f7;
+            --unresolved-link: #dc2626; /* Warning red color for dead connections */
+            --bg-active-tab: #ffffff;
+            --bg-inactive-tab: #ededed;
+            --bg-hover-item: #e5e5e5;
+        }
+
+        /* Custom Fine-Line Scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background-color: var(--scrollbar-thumb);
+            border-radius: 3px;
+        }
+
+        .markdown-preview {
+            line-height: 1.625;
+            color: #171717;
+            font-size: 16px;
+        }
+        .markdown-preview h1 { font-size: 2.2em; font-weight: 700; margin-top: 1.2em; margin-bottom: 0.6em; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; color: #111111; }
+        .markdown-preview h2 { font-size: 1.6em; font-weight: 700; margin-top: 1.3em; margin-bottom: 0.6em; color: #111111; }
+        .markdown-preview h3 { font-size: 1.3em; font-weight: 600; margin-top: 1.1em; margin-bottom: 0.5em; color: #1f1f1f; }
+        .markdown-preview p { margin-top: 0; margin-bottom: 1.1em; }
+        .markdown-preview a { color: #4f46e5; text-decoration: none; border-bottom: 1px solid transparent; cursor: pointer; transition: border-color 0.15s ease; }
+        .markdown-preview a:hover { border-bottom-color: #4f46e5; }
+        .markdown-preview code { font-family: 'Fira Code', monospace; background-color: var(--code-bg); padding: 0.2em 0.4em; border-radius: 4px; font-size: 0.9em; color: #be185d; }
+        .markdown-preview pre { background-color: var(--code-bg); padding: 1em; border-radius: 6px; overflow-x: auto; margin-bottom: 1.2em; border: 1px solid var(--border-color); }
+        .markdown-preview pre code { padding: 0; background-color: transparent; color: #0f172a; }
+        .markdown-preview ul { list-style-type: disc; padding-left: 2em; margin-bottom: 1.1em; }
+        .markdown-preview ol { list-style-type: decimal; padding-left: 2em; margin-bottom: 1.1em; }
+        .markdown-preview li { margin-bottom: 0.3em; }
+        .markdown-preview blockquote { border-left: 4px solid var(--accent); padding-left: 1em; margin: 1.2em 0; color: var(--text-muted); font-style: italic; }
+        .markdown-preview table { width: 100%; border-collapse: collapse; margin-bottom: 1.2em; }
+        .markdown-preview th, .markdown-preview td { border: 1px solid var(--border-color); padding: 0.6rem; text-align: left; }
+        .markdown-preview th { background-color: var(--bg-secondary); }
+
+        .wikilink {
+            color: #4f46e5;
+            text-decoration: none;
+            font-weight: 500;
+            border-bottom: 1px dashed transparent;
+            cursor: pointer;
+            background-color: rgba(127, 70, 252, 0.05);
+            padding: 0 4px;
+            border-radius: 3px;
+        }
+        .wikilink:hover {
+            border-bottom: 1px solid #4f46e5;
+            background-color: rgba(127, 70, 252, 0.1);
+        }
+        .wikilink.unresolved {
+            color: var(--unresolved-link);
+            background-color: rgba(220, 38, 38, 0.05);
+            opacity: 0.95;
+            border-bottom: 1px dashed var(--unresolved-link);
+            font-weight: 500;
+        }
+
+        /* Full Graph Styling */
+        .graph-node {
+            cursor: pointer;
+            stroke: #ffffff;
+            stroke-width: 1.5px;
+            transition: r 0.15s ease, fill 0.15s ease;
+        }
+        .graph-link {
+            stroke: #cbcbcb;
+            stroke-opacity: 0.5;
+            stroke-width: 1.2px;
+            transition: stroke-opacity 0.15s ease, stroke 0.15s ease;
+        }
+        .graph-text {
+            font-size: 10px;
+            pointer-events: all;
+            fill: #a3a3a3; /* Default Light Gray */
+            font-weight: 400;
+            cursor: pointer;
+            transition: fill 0.15s ease, font-size 0.15s ease, font-weight 0.15s ease, opacity 0.15s ease;
+        }
+
+        /* Custom Leftmost Ribbon active selection style in purple */
+        .ribbon-item-active {
+            border-left: 2px solid var(--accent) !important;
+            background-color: rgba(127, 70, 252, 0.08) !important;
+            color: var(--accent) !important;
+        }
+
+        /* Folder Rows matching exact custom requirements */
+        .folder-row {
+            background-color: #ededed;
+            font-weight: 700;
+            color: #171717;
+            border-radius: 4px;
+        }
+        
+        /* Highlight selection matching image_a06802.png */
+        .file-item-active {
+            background-color: rgba(127, 70, 252, 0.08) !important;
+            color: var(--accent) !important;
+            font-weight: 600;
+            border-left: 3px solid var(--accent);
+            border-radius: 4px;
+        }
+
+        /* Enable native copy and select inside preview workspace pane */
+        .copy-and-select-enabled {
+            user-select: text !important;
+            -webkit-user-select: text !important;
+        }
+    </style>
+</head>
+<body class="bg-[#ffffff] text-[#171717] h-screen flex flex-col select-none">
+
+    <!-- Initial full screen folder picker landing window -->
+    <div id="welcome-overlay" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#f6f6f6]/95 backdrop-blur-md p-6">
+        <div class="max-w-md w-full bg-[#ffffff] border border-[#dfdfdf] rounded-xl p-8 shadow-2xl text-center space-y-6">
+            <div class="flex justify-center">
+                <!-- Perfect geometric Obsidian crystalline octahedron symbol -->
+                <div class="w-20 h-20 rounded-2xl bg-[#7f46fc]/5 flex items-center justify-center border border-[#7f46fc]/20 text-[#7f46fc]">
+                    <svg class="w-12 h-12" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M50 5 L80 25 L85 65 L50 95 L15 65 L20 25 Z" fill="#7f46fc" fill-opacity="0.1" stroke="#7f46fc" stroke-width="6" stroke-linejoin="round"/>
+                        <path d="M50 5 L35 45 L50 95 L65 45 Z" fill="#7f46fc" fill-opacity="0.15" stroke="#7f46fc" stroke-width="4" stroke-linejoin="round"/>
+                        <path d="M20 25 L35 45 L15 65 M80 25 L65 45 L85 65" stroke="#7f46fc" stroke-width="4" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+            </div>
+            <div class="space-y-2">
+                <h1 class="text-2xl font-bold text-[#171717] tracking-tight">Obsidian Web Viewer</h1>
+                <p class="text-sm text-[#646464]">Mount your local Obsidian Vault directory to view and manage your workspace dynamically.</p>
+            </div>
+            <div class="space-y-2 pt-2">
+                <button onclick="triggerFolderSelect()" class="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-lg bg-[#7f46fc] hover:bg-[#632cd6] text-white font-medium transition duration-200 shadow-lg shadow-purple-900/10">
+                    <i data-lucide="folder-open" class="w-5 h-5"></i>
+                    <span>Select Vault Folder</span>
+                </button>
+                <input type="file" id="welcome-folder-picker" webkitdirectory directory multiple class="hidden" onchange="handleFolderUpload(event)">
+            </div>
+            <div class="text-[11px] text-[#646464] pt-4 border-t border-[#dfdfdf]">
+                Note: Use Chrome, Edge, or Opera to save direct edits back to your local storage files.
+            </div>
+        </div>
+    </div>
+
+    <div class="flex-1 flex overflow-hidden w-full">
+        
+        <!-- Left Ribbon Navigation Bar -->
+        <nav class="w-12 bg-[#ededed] border-r border-[#dfdfdf] flex flex-col items-center py-4 justify-between flex-shrink-0 z-20 h-full">
+            <!-- Top Section -->
+            <div class="flex flex-col items-center space-y-4 w-full">
+                <!-- Perfect geometric Obsidian logo in left utility bar -->
+                <div class="p-1 mb-2">
+                    <svg class="w-6 h-6 text-[#7f46fc]" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M50 5 L80 25 L85 65 L50 95 L15 65 L20 25 Z" fill="#7f46fc" fill-opacity="0.1" stroke="#7f46fc" stroke-width="6" stroke-linejoin="round"/>
+                        <path d="M50 5 L35 45 L50 95 L65 45 Z" fill="#7f46fc" fill-opacity="0.15" stroke="#7f46fc" stroke-width="4" stroke-linejoin="round"/>
+                        <path d="M20 25 L35 45 L15 65 M80 25 L65 45 L85 65" stroke="#7f46fc" stroke-width="4" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <button onclick="showPanel('files')" id="ribbon-files" class="p-2 w-full flex justify-center text-[#7f46fc] ribbon-item-active transition-all" title="File Explorer">
+                    <i data-lucide="folder" class="w-5 h-5"></i>
+                </button>
+                <button onclick="showPanel('search')" id="ribbon-search" class="p-2 w-full flex justify-center text-[#646464] hover:text-[#171717] transition-all" title="Search Notes">
+                    <i data-lucide="search" class="w-5 h-5"></i>
+                </button>
+                <button onclick="openNewGraphTab()" id="ribbon-graph" class="p-2 w-full flex justify-center text-[#646464] hover:text-[#171717] transition-all" title="Open Interactive Graph View">
+                    <i data-lucide="network" class="w-5 h-5"></i>
+                </button>
+                <button onclick="refreshVaultSilent()" class="p-2 w-full flex justify-center text-[#646464] hover:text-[#171717] transition-all" title="Refresh Vault (Silent)">
+                    <i data-lucide="refresh-cw" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- Bottom Section (Aligned dynamically) -->
+            <div class="flex flex-col items-center space-y-3 w-full">
+                <button onclick="triggerFolderSelect()" class="p-2 w-full flex justify-center text-[#646464] hover:text-[#171717] transition-all" title="Load Different Vault Folder">
+                    <i data-lucide="upload" class="w-5 h-5"></i>
+                </button>
+                <button id="ribbon-repair-btn" onclick="openBrokenLinksModal()" class="p-2 w-full flex justify-center text-[#646464] hover:text-[#171717] transition-all" title="Scan & Repair Broken WikiLinks">
+                    <i data-lucide="link-2-off" class="w-5 h-5"></i>
+                </button>
+                <button onclick="openHelpModal()" class="p-2 w-full flex justify-center text-[#646464] hover:text-[#171717] transition-all" title="View Instructions Guide">
+                    <i data-lucide="help-circle" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </nav>
+
+        <div class="flex-1 flex overflow-hidden w-full" id="split-container">
+            
+            <!-- Sidebar Explorer/Relations Space (2/5 = 40% initial width) -->
+            <aside id="sidebar-left" class="bg-[#f6f6f6] border-r border-[#dfdfdf] flex flex-col overflow-hidden flex-shrink-0" style="width: 40%;">
+                
+                <!-- File explorer Tab pane - Height matched exactly to workspace h-10 header bar -->
+                <div id="sidebar-explore-pane" class="h-[60%] flex flex-col overflow-hidden transition-all duration-200 border-b border-[#dfdfdf]">
+                    <div class="h-10 border-b border-[#dfdfdf] flex items-center justify-between px-3 text-xs font-semibold text-[#646464] tracking-wider uppercase flex-shrink-0">
+                        <span id="explorer-title">Files</span>
+                        <button onclick="collapseAllFolders()" id="collapse-explorer-btn" class="p-1 rounded hover:bg-black/5 text-[#646464] hover:text-black transition" title="Collapse All Folders">
+                            <i data-lucide="chevrons-up" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+
+                    <!-- File list explorer hierarchy -->
+                    <div id="panel-files-container" class="flex-1 overflow-y-auto p-2">
+                        <div id="file-tree" class="text-sm space-y-1">
+                            <div class="p-4 text-center text-xs opacity-60">
+                                No Vault loaded yet.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Quick search matches -->
+                    <div id="panel-search-container" class="hidden flex-1 flex flex-col overflow-hidden p-3">
+                        <div class="relative mb-3">
+                            <input type="text" id="sidebar-search-input" oninput="runSearch(this.value)" placeholder="Search notes..." class="w-full bg-[#ffffff] border border-[#dfdfdf] rounded px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#7f46fc] text-[#171717]">
+                            <i data-lucide="search" class="absolute right-2.5 top-2.5 w-3.5 h-3.5 opacity-40"></i>
+                        </div>
+                        <div id="search-results-list" class="flex-1 overflow-y-auto space-y-2 text-xs">
+                            <div class="text-center opacity-50 py-4">Type a query above.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Local hierarchical structures (Collapsible) -->
+                <div class="h-[40%] bg-[#f6f6f6] flex flex-col overflow-hidden relative" id="local-relations-panel">
+                    <div onclick="toggleLocalRelations()" class="p-2 border-b border-[#dfdfdf] flex items-center justify-between text-[11px] font-bold text-[#646464] tracking-wider uppercase cursor-pointer hover:bg-black/5 select-none">
+                        <div class="flex items-center space-x-1">
+                            <i data-lucide="git-branch" class="w-3.5 h-3.5"></i>
+                            <span>Local Relations (Hierarchical View)</span>
+                        </div>
+                        <i data-lucide="chevron-down" id="local-relations-toggle-icon" class="w-3.5 h-3.5 transition-transform duration-200"></i>
+                    </div>
+                    
+                    <div class="flex-1 relative bg-[#ffffff]/50 overflow-y-auto transition-all duration-200" id="local-graph-container">
+                        <!-- Placed dynamically based on active node state -->
+                    </div>
+                </div>
+
+                <!-- Status Sidebar Footer - Vault info text changed to non-clickable -->
+                <div class="h-6 bg-[#f6f6f6] border-t border-[#dfdfdf] px-3 flex items-center justify-between text-[10px] text-[#646464] flex-shrink-0">
+                    <div class="flex items-center space-x-1.5 text-[10px]" title="Vault path info">
+                        <i data-lucide="library" class="w-3 h-3 text-[#7f46fc]"></i>
+                        <span class="font-semibold" id="status-vault-info">No Active Vault Loaded</span>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Adjustable splitter bar -->
+            <div id="split-gutter" class="w-[3px] bg-[#dfdfdf] hover:bg-[#7f46fc]/80 active:bg-[#7f46fc] cursor-col-resize transition-all duration-150 z-30 self-stretch flex-shrink-0"></div>
+
+            <!-- Workspace Presentation Panel (3/5 = 60% initial width) -->
+            <main id="main-workspace" class="flex flex-col overflow-hidden bg-[#ffffff] relative font-normal" style="width: 60%;">
+                
+                <!-- Open workspace Tabs header - Height is h-10 -->
+                <div class="h-10 bg-[#f6f6f6] border-b border-[#dfdfdf] flex items-center justify-between px-3 flex-shrink-0 relative">
+                    <div id="tabs-bar" class="flex items-end space-x-1 h-full overflow-x-auto select-none pt-1">
+                        <!-- Loaded dynamically -->
+                    </div>
+                </div>
+
+                <!-- Dynamic Page Toolbar pathing -->
+                <div id="note-toolbar" class="h-10 bg-[#ffffff] border-b border-[#dfdfdf] flex items-center justify-between px-4 text-xs text-[#646464] flex-shrink-0 hidden">
+                    <div class="flex items-center space-x-4 flex-wrap">
+                        <div class="flex items-center space-x-2">
+                            <button onclick="navigateHistory(-1)" class="p-1 rounded hover:bg-black/5 hover:text-black transition" title="Go Back">
+                                <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                            </button>
+                            <button onclick="navigateHistory(1)" class="p-1 rounded hover:bg-black/5 hover:text-black transition" title="Go Forward">
+                                <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                            </button>
+                            <!-- Edit page button placed directly after navigation arrow keys -->
+                            <button id="toolbar-edit-btn" onclick="openEditModal()" class="p-1 rounded hover:bg-[#f6f6f6] hover:text-[#171717] border border-transparent hover:border-[#dfdfdf] transition text-[#646464]" title="Edit Note">
+                                <i data-lucide="edit-3" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                        <div id="toolbar-breadcrumbs" class="font-mono text-[#646464] flex items-center space-x-1 overflow-x-auto whitespace-nowrap py-1">
+                            <span>WIKI</span>
+                            <span>/</span>
+                            <span class="text-[#171717]" id="active-breadcrumb-node">Index</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Markdown Content Render Frame -->
+                <div id="note-preview-pane" class="flex-1 overflow-y-auto px-8 py-6 w-full hidden copy-and-select-enabled">
+                    <div id="rendered-content" class="markdown-preview leading-relaxed w-full copy-and-select-enabled">
+                        <!-- Rendered Markdown text contents outputted here -->
+                    </div>
+                </div>
+
+                <!-- Main Fullscreen Graph Presentation Frame -->
+                <div id="note-graph-pane" class="flex-1 flex flex-col bg-[#fafafa] overflow-hidden hidden">
+                    <!-- Graph View Horizontal Toolbar at the top to prevent obstruction -->
+                    <div id="graph-toolbar" class="h-10 bg-[#ffffff] border-b border-[#dfdfdf] flex items-center justify-between px-4 text-xs text-[#646464] flex-shrink-0">
+                        <div class="flex items-center space-x-2">
+                            <i data-lucide="network" class="w-4 h-4 text-[#7f46fc]"></i>
+                            <span class="font-bold text-[#171717] uppercase tracking-wider">Vault Map (Graph View)</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button onclick="openGraphFolderFilterModal()" class="px-2.5 py-1 rounded bg-[#f6f6f6] hover:bg-purple-500/10 text-[10px] font-semibold transition border border-[#dfdfdf] text-center text-[#171717] flex items-center space-x-1" title="Filter Folders">
+                                <i data-lucide="folder" class="w-3.5 h-3.5 text-[#646464]"></i>
+                                <span>Filter Folders</span>
+                            </button>
+                            <button onclick="rebuildFullscreenGraph()" class="px-2.5 py-1 rounded bg-[#7f46fc] hover:bg-[#632cd6] text-white text-[10px] font-semibold transition text-center shadow-sm" title="Rebuild Graph">
+                                Rebuild Graph
+                            </button>
+                            <button onclick="toggleGraphLabels()" id="graph-label-toggle-btn" class="px-2.5 py-1 rounded bg-[#f6f6f6] hover:bg-purple-500/10 text-[10px] font-semibold transition border border-[#dfdfdf] text-center text-[#171717]" title="Toggle Node Labels">
+                                Hide Labels
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Container holding the Graph SVG -->
+                    <div class="flex-1 relative overflow-hidden">
+                        <svg id="fullscreen-graph-svg" class="w-full h-full cursor-grab active:cursor-grabbing"></svg>
+                    </div>
+                </div>
+
+                <!-- Empty state landing window (Default upon Vault loading) -->
+                <div id="empty-workspace-state" class="absolute inset-0 flex flex-col items-center justify-center p-8 text-center bg-[#ffffff] z-10">
+                    <div class="w-16 h-16 rounded-2xl bg-[#7f46fc]/5 flex items-center justify-center mb-4 border border-[#7f46fc]/10 text-[#7f46fc]">
+                        <i data-lucide="book-open" class="w-8 h-8"></i>
+                    </div>
+                    <h2 class="text-lg font-semibold mb-2">No Document Opened</h2>
+                    <p class="text-xs text-[#646464] max-w-sm mb-4">
+                        Select a file from the explorer list on the left to read it, or hold <kbd class="px-1.5 py-0.5 bg-[#f6f6f6] text-[#171717] border border-[#dfdfdf] rounded">Ctrl</kbd> when clicking to load into a new workspace tab.
+                    </p>
+                </div>
+
+                <footer class="h-6 bg-[#f6f6f6] border-t border-[#dfdfdf] flex items-center justify-between px-3 text-[10px] text-[#646464] z-20 flex-shrink-0">
+                    <div class="flex items-center space-x-3">
+                        <span id="status-file-count">0 Documents</span>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <span id="status-backlinks-count">0 Backlinks</span>
+                        <div class="flex items-center space-x-1">
+                            <i data-lucide="pencil" class="w-3 h-3 text-[#7f46fc]"></i>
+                            <span id="status-word-count">0 Words</span>
+                        </div>
+                        <span id="status-char-count">0 Characters</span>
+                        <span id="sync-status">Unsynced</span>
+                    </div>
+                </footer>
+            </main>
+        </div>
+    </div>
+
+    <!-- Custom Tab Right-Click Context Menu -->
+    <div id="tab-context-menu" class="hidden absolute z-[100] bg-[#ffffff] border border-[#dfdfdf] rounded-lg shadow-xl text-xs py-1 w-36">
+        <button onclick="contextCloseTab()" class="w-full text-left px-3 py-1.5 hover:bg-neutral-100 flex items-center space-x-2 text-[#171717]">
+            <i data-lucide="x" class="w-3.5 h-3.5 opacity-70"></i>
+            <span>Close Tab</span>
+        </button>
+        <button onclick="contextCloseOtherTabs()" class="w-full text-left px-3 py-1.5 hover:bg-neutral-100 flex items-center space-x-2 text-[#171717]">
+            <i data-lucide="minus-square" class="w-3.5 h-3.5 opacity-70"></i>
+            <span>Close Others</span>
+        </button>
+    </div>
+
+    <!-- Markdown popup modal workspace edit pane -->
+    <div id="edit-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 hidden">
+        <div class="bg-[#ffffff] border border-[#dfdfdf] rounded-xl w-full max-w-4xl h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="p-4 border-b border-[#dfdfdf] flex items-center justify-between bg-[#f6f6f6]">
+                <div class="flex items-center space-x-2">
+                    <i data-lucide="edit-3" class="w-4 h-4 text-[#7f46fc]"></i>
+                    <h3 class="text-sm font-bold text-[#171717] uppercase tracking-wider" id="edit-modal-title">Edit Document Content</h3>
+                </div>
+                <button onclick="closeEditModal(false)" class="p-1 rounded hover:bg-black/5 text-[#646464] hover:text-black transition">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 p-4 flex flex-col overflow-hidden bg-[#ffffff]">
+                <div class="mb-3">
+                    <label class="block text-[10px] font-bold text-[#646464] uppercase tracking-wider mb-1">Document Title</label>
+                    <input type="text" id="edit-modal-title-input" class="w-full bg-[#f6f6f6] border border-[#dfdfdf] rounded p-2 text-sm text-[#171717] focus:outline-none focus:ring-1 focus:ring-[#7f46fc]">
+                </div>
+                <div class="flex-1 flex flex-col overflow-hidden">
+                    <label class="block text-[10px] font-bold text-[#646464] uppercase tracking-wider mb-1">Markdown Body Syntax</label>
+                    <textarea id="edit-modal-textarea" class="flex-1 bg-[#f6f6f6] border border-[#dfdfdf] rounded p-3 font-mono text-xs text-[#171717] resize-none focus:outline-none focus:ring-1 focus:ring-[#7f46fc] leading-relaxed"></textarea>
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-[#dfdfdf] bg-[#f6f6f6] flex items-center justify-end space-x-2 flex-shrink-0">
+                <button onclick="closeEditModal(false)" class="px-4 py-2 text-xs font-semibold rounded bg-[#ffffff] border border-[#dfdfdf] hover:bg-[#e5e5e5] text-[#171717] transition">
+                    Discard Changes
+                </button>
+                <button onclick="closeEditModal(true)" class="px-4 py-2 text-xs font-semibold rounded bg-[#7f46fc] hover:bg-[#632cd6] text-white transition shadow-lg shadow-purple-900/10">
+                    Apply & Save File
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Central repair center for invalid internal wiki links -->
+    <div id="broken-links-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 hidden">
+        <div class="bg-[#ffffff] border border-[#dfdfdf] rounded-xl w-full max-w-3xl h-[75vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="p-4 border-b border-[#dfdfdf] flex items-center justify-between bg-[#f6f6f6]">
+                <div class="flex items-center space-x-2 text-[#dc2626]">
+                    <i data-lucide="link-2-off" class="w-5 h-5"></i>
+                    <h3 class="text-sm font-bold uppercase tracking-wider">Unresolved Links Control Panel</h3>
+                </div>
+                <button onclick="closeBrokenLinksModal()" class="p-1 rounded hover:bg-black/5 text-[#646464]">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4 space-y-4" id="broken-links-list">
+                <!-- Discovered broken connections shown here with context selection -->
+            </div>
+
+            <div class="p-4 border-t border-[#dfdfdf] bg-[#f6f6f6] flex items-center justify-between">
+                <span class="text-xs text-[#646464]" id="broken-links-count-display">0 broken links found</span>
+                <button onclick="closeBrokenLinksModal()" class="px-4 py-2 text-xs font-semibold rounded bg-[#ffffff] border border-[#dfdfdf] hover:bg-[#e5e5e5] text-[#171717] transition">
+                    Close Panel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Popup selector workspace when matching individual unaufgelöster wikilink links in previews -->
+    <div id="resolve-link-action-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 hidden">
+        <div class="bg-[#ffffff] border border-[#dfdfdf] rounded-xl w-full max-w-md shadow-2xl p-6 space-y-4">
+            <div class="flex items-center space-x-2 text-[#171717]">
+                <i data-lucide="alert-circle" class="w-5 h-5"></i>
+                <h3 class="text-sm font-bold uppercase tracking-wider" id="unresolved-link-title">Link Configuration Panel</h3>
+            </div>
+            <p class="text-xs text-[#646464]">
+                Choose an action to configure or redirect the WikiLink connection.
+            </p>
+
+            <div class="space-y-2 pt-2">
+                <button onclick="resolveUnresolvedWithNew()" class="w-full text-left flex items-center space-x-3 p-3 rounded-lg border border-[#dfdfdf] hover:bg-neutral-50 hover:border-neutral-400 transition">
+                    <i data-lucide="plus-circle" class="w-5 h-5 text-[#171717]"></i>
+                    <div>
+                        <div class="text-xs font-bold text-[#171717]">Create Target Page</div>
+                        <div class="text-[10px] text-[#646464]">Instantly generates a blank file using this name layout inside the vault.</div>
+                    </div>
+                </button>
+
+                <div class="p-4 rounded-lg border border-[#dfdfdf] space-y-3 bg-[#f6f6f6]/50">
+                    <div class="flex items-center space-x-3">
+                        <i data-lucide="link" class="w-5 h-5 text-[#171717]"></i>
+                        <span class="text-xs font-bold text-[#171717]">Link to Existing Page or Chapter</span>
+                    </div>
+                    
+                    <!-- Two-Step Link Resolution for popup dialog -->
+                    <div class="space-y-2">
+                        <div>
+                            <label class="block text-[10px] font-bold text-[#646464] uppercase tracking-wider mb-1">Step 1: Select Target Page</label>
+                            <select id="unresolved-link-page-select" onchange="onUnresolvedPageSelectChange()" class="w-full bg-[#ffffff] border border-[#dfdfdf] rounded p-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#7f46fc] text-[#171717]">
+                                <!-- Populated dynamically with pages only -->
+                            </select>
+                        </div>
+                        
+                        <div id="unresolved-link-chapter-container" class="hidden">
+                            <label class="block text-[10px] font-bold text-[#646464] uppercase tracking-wider mb-1">Step 2: Link to Specific Chapter (Optional)</label>
+                            <select id="unresolved-link-chapter-select" class="w-full bg-[#ffffff] border border-[#dfdfdf] rounded p-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#7f46fc] text-[#171717]">
+                                <!-- Populated with headings of selected page -->
+                            </select>
+                        </div>
+                    </div>
+
+                    <button onclick="resolveUnresolvedWithExisting()" class="w-full py-1.5 text-xs font-semibold bg-[#171717] hover:bg-[#2c2c2c] text-white rounded transition mt-1 shadow-sm">
+                        Redirect WikiLink Connection
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-2">
+                <button onclick="closeResolveLinkActionModal()" class="px-4 py-2 text-xs font-semibold rounded bg-[#ffffff] border border-[#dfdfdf] hover:bg-[#e5e5e5] text-[#171717] transition">
+                    Cancel Operation
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Folder filter modal for Graph View -->
+    <div id="graph-folder-filter-modal" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 hidden">
+        <div class="bg-[#ffffff] border border-[#dfdfdf] rounded-xl w-full max-w-md shadow-2xl p-6 space-y-4">
+            <div class="flex items-center space-x-2 text-[#171717]">
+                <i data-lucide="folder" class="w-5 h-5 text-[#7f46fc]"></i>
+                <h3 class="text-sm font-bold uppercase tracking-wider">Filter Folders in Graph</h3>
+            </div>
+            <p class="text-xs text-[#646464]">
+                Select which folders should be included in the interactive Graph View rendering.
+            </p>
+            <div class="flex justify-between items-center text-xs pb-1 border-b border-[#dfdfdf]">
+                <button onclick="toggleAllGraphFolders(true)" class="text-[#7f46fc] font-semibold hover:underline">Select All</button>
+                <button onclick="toggleAllGraphFolders(false)" class="text-[#7f46fc] font-semibold hover:underline">Clear All</button>
+            </div>
+            <div id="graph-folder-checkbox-list" class="max-h-48 overflow-y-auto space-y-2 py-1 pr-1">
+                <!-- Checkboxes populated dynamically -->
+            </div>
+            <div class="flex justify-end pt-2 space-x-2">
+                <button onclick="closeGraphFolderFilterModal()" class="px-4 py-2 text-xs font-semibold rounded bg-[#ffffff] border border-[#dfdfdf] hover:bg-[#e5e5e5] text-[#171717] transition">
+                    Cancel
+                </button>
+                <button onclick="applyGraphFolderFilter()" class="px-4 py-2 text-xs font-semibold rounded bg-[#171717] hover:bg-[#333333] text-white transition">
+                    Apply Filter
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Instruction Guide Modal Panel -->
+    <div id="help-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 hidden">
+        <div class="bg-[#ffffff] border border-[#dfdfdf] rounded-xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div class="p-4 border-b border-[#dfdfdf] flex items-center justify-between bg-[#f6f6f6]">
+                <div class="flex items-center space-x-2 text-[#171717]">
+                    <i data-lucide="help-circle" class="w-5 h-5 text-[#7f46fc]"></i>
+                    <h3 class="text-sm font-bold uppercase tracking-wider">Obsidian Beginner Guide</h3>
+                </div>
+                <button onclick="closeHelpModal()" class="p-1 rounded hover:bg-black/5 text-[#646464]">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-6 space-y-6 text-xs text-[#171717] leading-relaxed">
+                <!-- Section 1 -->
+                <div class="space-y-2">
+                    <h4 class="font-bold text-[#7f46fc] uppercase tracking-wide text-[11px] border-b border-[#dfdfdf] pb-1">1. What is a "Vault" & How to Open It</h4>
+                    <ul class="list-disc pl-5 space-y-1.5 text-[#646464]">
+                        <li><strong>What is a Vault?</strong> Think of a "Vault" simply as a standard folder on your computer's drive. Inside are your text notes (as simple <code>.md</code> Markdown files) and folders. Obsidian leaves them as regular files on your drive, keeping your data secure and fully yours.</li>
+                        <li><strong>Opening your Vault at start:</strong> When launching the app for the first time, click the purple <strong>"Select Vault Folder"</strong> button. Select and confirm your prepared notes folder in your computer's file window, and the tool will automatically load all your notes.</li>
+                        <li><strong>Switching Vaults during work:</strong> To open a different folder while working, click the icon with the upward-pointing arrow (<strong>"Load Different Vault Folder"</strong>) at the bottom of the far-left gray sidebar to load any other folder.</li>
+                    </ul>
+                </div>
+                
+                <!-- Section 2 -->
+                <div class="space-y-2">
+                    <h4 class="font-bold text-[#7f46fc] uppercase tracking-wide text-[11px] border-b border-[#dfdfdf] pb-1">2. Local Relations & Graph Map</h4>
+                    <ul class="list-disc pl-5 space-y-1.5 text-[#646464]">
+                        <li><strong>Local Relations (Bottom Left):</strong> Shows links connected to your active note. <em>Outgoing Connections</em> shows which notes are linked from here. <em>Backlinks</em> lists other notes linking back to this one. Clicking any note name opens it immediately.</li>
+                        <li><strong>Graph View (Visual Map):</strong> A fully interactive map showing notes as dots (nodes) and links as lines. Open it via the network icon (three connected dots) in the left sidebar.
+                            <div class="mt-1 bg-[#f6f6f6] p-2 rounded border border-[#dfdfdf] space-y-1 text-[11px]">
+                                <div>• <strong>Pan & Zoom:</strong> Click & drag empty space to move. Scroll to zoom in/out.</div>
+                                <div>• <strong>Move Dots:</strong> Click & drag individual dots to rearrange the map.</div>
+                                <div>• <strong>Highlight Connections:</strong> Click once on a dot. It turns purple, its links light up, and its direct neighbors' names turn bold and black (while others fade) to visualize relationships.</div>
+                                <div>• <strong>Clear Highlight:</strong> Click any empty blank space on the map to reset all colors.</div>
+                                <div>• <strong>Filter Folders & Labels:</strong> Use the toolbar buttons at the top of the Graph View to filter which folders appear or to toggle text labels on/off.</div>
+                                <div>• <strong>Open Note:</strong> Click directly on the written <em>name</em> of a note to open it.</div>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Section 3 -->
+                <div class="space-y-2">
+                    <h4 class="font-bold text-[#7f46fc] uppercase tracking-wide text-[11px] border-b border-[#dfdfdf] pb-1">3. Tabs – Working Like a Web Browser</h4>
+                    <ul class="list-disc pl-5 space-y-1.5 text-[#646464]">
+                        <li><strong>Switching Tabs:</strong> Click on any tab name at the top to display that note or the Graph View, just like in Google Chrome or Safari.</li>
+                        <li><strong>Closing Tabs:</strong> Right-click any tab to open a menu to close that tab (<em>Close Tab</em>) or clean up the rest of your workspace (<em>Close Others</em>).</li>
+                        <li><strong>Open in New Tab:</strong> Clicking a file in the sidebar opens it in the active tab. To open it in a <em>new tab</em>, hold down <kbd class="px-1 py-0.5 bg-[#ededed] border border-[#dfdfdf] rounded text-[10px]">Ctrl</kbd> (Windows) or <kbd class="px-1 py-0.5 bg-[#ededed] border border-[#dfdfdf] rounded text-[10px]">Cmd</kbd> (Mac) while clicking.</li>
+                    </ul>
+                </div>
+
+                <!-- Section 4 -->
+                <div class="space-y-2">
+                    <h4 class="font-bold text-[#7f46fc] uppercase tracking-wide text-[11px] border-b border-[#dfdfdf] pb-1">4. WikiLinks & Repairing Broken Links</h4>
+                    <ul class="list-disc pl-5 space-y-1.5 text-[#646464]">
+                        <li><strong>Internal Links:</strong> Write links to other notes in double square brackets, e.g., <code>[[My Shopping List]]</code>. In reading mode, this becomes a clickable blue link.</li>
+                        <li><strong>What is a Broken Link?</strong> If you link to a note that doesn't exist yet (e.g., <code>[[Future Plan 2027]]</code>), the link appears <strong class="text-[#dc2626]">red</strong> and dashed (pointing to nothing).</li>
+                        <li><strong>How to Repair a Broken Link:</strong>
+                            <div class="mt-1 bg-[#f6f6f6] p-2 rounded border border-[#dfdfdf] space-y-1 text-[11px]">
+                                <div>• <strong>Create Page:</strong> Click the red link and choose <em>"Create Target Page"</em> to instantly create a new, empty file with that name.</div>
+                                <div>• <strong>Redirect Link:</strong> Click the red link, choose an existing note (Step 1), select an optional heading/chapter (Step 2), and click to automatically redirect the link.</div>
+                                <div>• <strong>Central Control Panel:</strong> Click the broken chain icon in the far-left sidebar. If there are broken links, it glows <strong class="text-[#dc2626]">red</strong>. Open it to scan and easily fix all broken links in your workspace from one convenient menu.</div>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="p-4 border-t border-[#dfdfdf] bg-[#f6f6f6] flex justify-end">
+                <button onclick="closeHelpModal()" class="px-4 py-2 text-xs font-semibold rounded bg-[#171717] hover:bg-[#333333] text-white transition">
+                    Got it
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let vaultData = {
+            title: "Vault",
+            files: {}, // Flat structure dictionary mapping: { relativePath: { name, path, content, size, folder, handle } }
+            hierarchy: {} 
+        };
+
+        let openTabs = [];
+        let activeTabIndex = -1;
+        let dirHandle = null;
+
+        let navigationHistory = [];
+        let historyIndex = -1;
+
+        let globalGraphSimulation = null;
+        let activeUnresolvedLink = null; 
+        
+        let localRelationsExpanded = true;
+        let showGraphLabels = true; // Global state for label visibility in Graph view
+        let selectedGraphFolders = []; // keeps tracks of selected folders for filter
+        let currentSearchQuery = ""; // Tracks currently active search word
+
+        let activeGraphNodeId = null; // Highlighting clicked graph node state
+        let contextMenuTabIndex = -1; // Stores index of tab right-clicked
+
+        // Safe Element interaction wrappers
+        function safeSetText(id, text) {
+            const el = document.getElementById(id);
+            if (el) el.innerText = text;
+        }
+
+        // DOM Walk highlighter for search terms (Clean highlight inside unified words without splitting)
+        function highlightSearchQuery(element, query) {
+            if (!query || query.trim() === "") return;
+            const regex = new RegExp(`(${escapeRegExp(query)})`, 'gi');
+            
+            function walk(node) {
+                if (node.nodeType === 3) { // Text Node
+                    const text = node.nodeValue;
+                    if (regex.test(text)) {
+                        const span = document.createElement('span');
+                        // No margins or block margins to prevent splitting visual layout
+                        span.innerHTML = text.replace(regex, '<mark class="bg-yellow-200 text-black font-medium" style="padding: 0; margin: 0; display: inline; border-radius: 0px;">$1</mark>');
+                        node.parentNode.replaceChild(span, node);
+                    }
+                } else if (node.nodeType === 1 && node.childNodes && !['SCRIPT', 'STYLE', 'INPUT', 'TEXTAREA'].includes(node.tagName)) {
+                    // Create stable copy of children array to avoid loop side effects while altering nodes
+                    const children = Array.from(node.childNodes);
+                    children.forEach(child => walk(child));
+                }
+            }
+            walk(element);
+        }
+
+        function safeSetHTML(id, html) {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = html;
+        }
+
+        function safeToggleClass(id, className, forceValue) {
+            const el = document.getElementById(id);
+            if (el) {
+                if (forceValue !== undefined) {
+                    el.classList.toggle(className, forceValue);
+                } else {
+                    el.classList.toggle(className);
+                }
+            }
+        }
+
+        // Notification system popups
+        function showNotification(message, type = "info") {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            
+            const toast = document.createElement('div');
+            toast.className = `p-3 rounded-lg shadow-2xl border text-xs font-semibold flex items-center space-x-2 transition-all duration-300 transform translate-y-2 opacity-0 pointer-events-auto max-w-sm bg-[#ffffff] border-[#dfdfdf] text-[#171717]`;
+            
+            if (type === "success") {
+                toast.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4 text-neutral-800"></i><span>${message}</span>`;
+            } else if (type === "error") {
+                toast.innerHTML = `<i data-lucide="alert-triangle" class="w-4 h-4 text-neutral-800"></i><span>${message}</span>`;
+            } else if (type === "warning") {
+                toast.innerHTML = `<i data-lucide="alert-circle" class="w-4 h-4 text-neutral-800"></i><span>${message}</span>`;
+            } else {
+                toast.innerHTML = `<i data-lucide="info" class="w-4 h-4 text-[#7f46fc]"></i><span>${message}</span>`;
+            }
+            
+            container.appendChild(toast);
+            initializeLucide();
+            
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+            
+            setTimeout(() => {
+                toast.classList.add('translate-y-[-2px]', 'opacity-0');
+                setTimeout(() => { toast.remove(); }, 300);
+            }, 4000);
+        }
+
+        function initializeLucide() {
+            if (typeof lucide !== 'undefined' && lucide.createIcons) {
+                lucide.createIcons();
+            }
+        }
+
+        // Setup draggable split container panel metrics
+        function initializeSplitResizer() {
+            const container = document.getElementById('split-container');
+            const leftSide = document.getElementById('sidebar-left');
+            const rightSide = document.getElementById('main-workspace');
+            const gutter = document.getElementById('split-gutter');
+
+            let isResizing = false;
+
+            gutter.addEventListener('mousedown', function(e) {
+                isResizing = true;
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+            });
+
+            document.addEventListener('mousemove', function(e) {
+                if (!isResizing) return;
+                const containerRect = container.getBoundingClientRect();
+                let pointerRelativeX = e.clientX - containerRect.left;
+                
+                const minWidth = containerRect.width * 0.15;
+                const maxWidth = containerRect.width * 0.85;
+                if (pointerRelativeX < minWidth) pointerRelativeX = minWidth;
+                if (pointerRelativeX > maxWidth) pointerRelativeX = maxWidth;
+
+                const leftWidthPercent = (pointerRelativeX / containerRect.width) * 100;
+                const rightWidthPercent = 100 - leftWidthPercent;
+
+                leftSide.style.width = `${leftWidthPercent}%`;
+                rightSide.style.width = `${rightWidthPercent}%`;
+                
+                if (openTabs[activeTabIndex] && openTabs[activeTabIndex].type === 'graph') {
+                    renderFullscreenGraph();
+                }
+            });
+
+            document.addEventListener('mouseup', function() {
+                if (isResizing) {
+                    isResizing = false;
+                    document.body.style.cursor = 'default';
+                    document.body.style.userSelect = '';
+                }
+            });
+
+            // Set up listener for closing context menu when clicking outside
+            document.addEventListener('click', function(e) {
+                const ctxMenu = document.getElementById('tab-context-menu');
+                if (ctxMenu) {
+                    ctxMenu.classList.add('hidden');
+                }
+            });
+        }
+
+        // Instructions Modal Display Controls
+        function openHelpModal() {
+            safeToggleClass('help-modal', 'hidden', false);
+        }
+        function closeHelpModal() {
+            safeToggleClass('help-modal', 'hidden', true);
+        }
+
+        // Local Relations Toggling Layout
+        function toggleLocalRelations() {
+            localRelationsExpanded = !localRelationsExpanded;
+            const container = document.getElementById('local-graph-container');
+            const icon = document.getElementById('local-relations-toggle-icon');
+            const panel = document.getElementById('local-relations-panel');
+            const explorerPane = document.getElementById('sidebar-explore-pane');
+            
+            if (localRelationsExpanded) {
+                container.classList.remove('hidden');
+                if (icon) icon.style.transform = 'rotate(0deg)';
+                panel.style.height = '40%';
+                explorerPane.style.height = '60%';
+            } else {
+                container.classList.add('hidden');
+                if (icon) icon.style.transform = 'rotate(-90deg)';
+                panel.style.height = 'auto'; // minimized to header height
+                explorerPane.style.height = 'calc(100% - 36px)'; // fill remaining screen
+            }
+        }
+
+        async function triggerFolderSelect() {
+            if ('showDirectoryPicker' in window) {
+                try {
+                    dirHandle = await window.showDirectoryPicker({
+                        mode: 'readwrite'
+                    });
+                    await scanDirectory(dirHandle);
+                    safeSetText('sync-status', 'Synced: Direct Access');
+                    showNotification("Vault connected with active write permissions!", "success");
+                } catch (err) {
+                    console.warn("Direct directory picker failed or cancelled: ", err);
+                    if (err.name !== 'AbortError') {
+                        document.getElementById('welcome-folder-picker').click();
+                    }
+                }
+            } else {
+                document.getElementById('welcome-folder-picker').click();
+            }
+        }
+
+        async function scanDirectory(directoryHandle, path = "", preserveTabs = false) {
+            if (path === "") {
+                vaultData.files = {};
+                vaultData.title = directoryHandle.name;
+            }
+
+            for await (const entry of directoryHandle.values()) {
+                const relativePath = path ? `${path}/${entry.name}` : entry.name;
+                
+                if (entry.kind === 'file') {
+                    if (entry.name.endsWith('.md')) {
+                        const file = await entry.getFile();
+                        const content = await file.text();
+                        const nameWithoutExtension = entry.name.substring(0, entry.name.lastIndexOf('.'));
+                        
+                        const pathParts = relativePath.split('/');
+                        let folder = "ROOT";
+                        if (pathParts.length > 1) {
+                            folder = pathParts[pathParts.length - 2];
+                        }
+
+                        vaultData.files[relativePath] = {
+                            name: nameWithoutExtension,
+                            path: relativePath,
+                            content: content || "",
+                            size: file.size,
+                            folder: folder,
+                            handle: entry 
+                        };
+                    }
+                } else if (entry.kind === 'directory') {
+                    if (!entry.name.startsWith('.')) {
+                        await scanDirectory(entry, relativePath, preserveTabs);
+                    }
+                }
+            }
+
+            if (path === "") {
+                safeToggleClass('welcome-overlay', 'hidden', true);
+                buildFileTree();
+                updateStatusBar();
+                
+                if (!preserveTabs) {
+                    openTabs = [];
+                    activeTabIndex = -1;
+                }
+                
+                // Initialize default graph folder checklist by excluding "ROOT" by default
+                const uniqueFolders = getUniqueVaultFolders();
+                selectedGraphFolders = uniqueFolders.filter(f => f !== "ROOT");
+
+                renderTabsList();
+                displayActiveTab();
+                renderLocalRelations();
+            }
+        }
+
+        // Fallback for browsers not supporting Web Access File API
+        function handleFolderUpload(event) {
+            const files = event.target.files;
+            if (!files || files.length === 0) return;
+
+            vaultData.files = {};
+            openTabs = [];
+            activeTabIndex = -1;
+            selectedGraphFolders = [];
+
+            const firstFilePath = files[0].webkitRelativePath;
+            const folderName = firstFilePath.substring(0, firstFilePath.indexOf("/"));
+            vaultData.title = folderName || "My Obsidian Vault";
+            
+            let fileReadPromises = [];
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                if (file.name.endsWith('.md')) {
+                    const relativePath = file.webkitRelativePath;
+                    
+                    const promise = new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            const nameWithoutExtension = file.name.substring(0, file.name.lastIndexOf('.'));
+                            
+                            const pathParts = relativePath.split('/');
+                            let folder = "ROOT";
+                            if (pathParts.length > 2) {
+                                folder = pathParts[pathParts.length - 2];
+                            }
+
+                            vaultData.files[relativePath] = {
+                                name: nameWithoutExtension,
+                                path: relativePath,
+                                content: e.target.result || "",
+                                size: file.size,
+                                folder: folder,
+                                handle: null 
+                            };
+                            resolve();
+                        };
+                        reader.readAsText(file);
+                    });
+                    fileReadPromises.push(promise);
+                }
+            }
+
+            Promise.all(fileReadPromises).then(() => {
+                safeToggleClass('welcome-overlay', 'hidden', true);
+                safeSetText('sync-status', 'Read-Only Mode');
+                showNotification("Vault loaded! Use Chrome/Edge to enable local writing capabilities.", "warning");
+                buildFileTree();
+                updateStatusBar();
+                
+                const uniqueFolders = getUniqueVaultFolders();
+                selectedGraphFolders = uniqueFolders.filter(f => f !== "ROOT");
+
+                openTabs = [];
+                activeTabIndex = -1;
+                renderTabsList();
+                displayActiveTab();
+                renderLocalRelations();
+            });
+        }
+
+        // Silent refresh of active directory handle with complete page repainting
+        async function refreshVaultSilent() {
+            if (dirHandle) {
+                showNotification("Synchronizing vault data silently from storage...", "info");
+                try {
+                    const currentActivePath = openTabs[activeTabIndex]?.path;
+                    // Preserve active tabs throughout filesystem re-scan
+                    await scanDirectory(dirHandle, "", true);
+                    
+                    if (currentActivePath && vaultData.files[currentActivePath]) {
+                        displayActiveTab();
+                    }
+                    updateRepairButtonColor();
+                    showNotification("Vault synchronized and view repainted successfully!", "success");
+                } catch (err) {
+                    showNotification("Synchronization failed: " + err.message, "error");
+                }
+            } else {
+                showNotification("No active directory handle found. Click the bottom load icon to choose a folder path.", "error");
+            }
+        }
+
+        // Generate Explorer File structures (nested & wrapped)
+        function buildFileTree() {
+            const fileTreeContainer = document.getElementById('file-tree');
+            if (!fileTreeContainer) return;
+
+            fileTreeContainer.innerHTML = '';
+
+            const tree = {};
+            Object.keys(vaultData.files).forEach(path => {
+                const parts = path.split('/');
+                if (!dirHandle && parts.length > 1) {
+                    parts.shift();
+                }
+                
+                let current = tree;
+                parts.forEach((part, index) => {
+                    if (index === parts.length - 1) {
+                        current[part] = { _type: 'file', _path: path };
+                    } else {
+                        if (!current[part]) {
+                            current[part] = { _type: 'folder', _expanded: true };
+                        }
+                        current = current[part];
+                    }
+                });
+            });
+
+            vaultData.hierarchy = tree;
+            const treeHTML = renderTreeBranch(tree);
+            fileTreeContainer.innerHTML = treeHTML || `<div class="p-4 text-center text-xs opacity-60">No markdown notes detected inside folder.</div>`;
+            initializeLucide();
+            updateRepairButtonColor(); // Conditionally trigger repair icon coloration
+        }
+
+        // Recursively render folder structures matching standard folder structures (indented 20px & wrapped)
+        function renderTreeBranch(branch, depth = 0) {
+            let html = '';
+            const paddingLeft = depth * 20 + 8; // Multi-level indent is now cleaner and 20px based
+
+            const keys = Object.keys(branch).filter(k => k !== '_type' && k !== '_expanded' && k !== '_path');
+            // Sort folder-types before individual leaf note items
+            keys.sort((a, b) => {
+                const typeA = branch[a]._type || 'folder';
+                const typeB = branch[b]._type || 'folder';
+                if (typeA !== typeB) {
+                    return typeA === 'folder' ? -1 : 1;
+                }
+                return a.localeCompare(b);
+            });
+
+            keys.forEach(key => {
+                const node = branch[key];
+                if (node._type === 'file') {
+                    const activeTab = openTabs[activeTabIndex];
+                    const isActive = (activeTab && activeTab.type === 'note' && activeTab.path === node._path);
+                    const fileSelectClasses = isActive 
+                        ? 'file-item-active shadow-sm' 
+                        : 'text-[#444444] hover:bg-black/5 hover:text-black';
+                    
+                    html += `
+                        <div onclick="handleFileClick('${node._path}', event)" class="flex items-start space-x-2 py-1.5 px-2 rounded cursor-pointer transition-all duration-150 ${fileSelectClasses}" style="padding-left: ${paddingLeft}px" data-path="${node._path}">
+                            <i data-lucide="file-text" class="w-3.5 h-3.5 opacity-70 flex-shrink-0 mt-0.5"></i>
+                            <span class="break-words text-xs leading-tight whitespace-normal w-full" title="${key}">${node._path.endsWith('.md') ? key.substring(0, key.lastIndexOf('.')) : key}</span>
+                        </div>
+                    `;
+                } else {
+                    const folderId = `folder-${Math.random().toString(36).substr(2, 9)}`;
+                    html += `
+                        <div id="${folderId}-container" class="space-y-0.5">
+                            <div onclick="toggleFolderNode('${folderId}')" class="folder-row flex items-start justify-between py-1 px-2 cursor-pointer text-xs" style="padding-left: ${paddingLeft}px">
+                                <div class="flex items-start space-x-1.5 w-full">
+                                    <i data-lucide="chevron-down" id="${folderId}-icon" class="w-3 h-3 opacity-60 transition-transform duration-200 mt-0.5 flex-shrink-0"></i>
+                                    <i data-lucide="folder" class="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5"></i>
+                                    <span class="font-bold break-words leading-tight whitespace-normal w-full" title="${key}">${key}</span>
+                                </div>
+                            </div>
+                            <div id="${folderId}-content" class="space-y-0.5 transition-all">
+                                ${renderTreeBranch(node, depth + 1)}
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+
+            return html;
+        }
+
+        // Helper function: Traverse hierarchy in the exact explorer visual layout sequence
+        function getFlattenedHierarchicalFiles(branch = vaultData.hierarchy, list = []) {
+            const keys = Object.keys(branch).filter(k => k !== '_type' && k !== '_expanded' && k !== '_path');
+            keys.sort((a, b) => {
+                const typeA = branch[a]._type || 'folder';
+                const typeB = branch[b]._type || 'folder';
+                if (typeA !== typeB) return typeA === 'folder' ? -1 : 1;
+                return a.localeCompare(b);
+            });
+            keys.forEach(key => {
+                const node = branch[key];
+                if (node._type === 'file') {
+                    list.push(node._path);
+                } else {
+                    getFlattenedHierarchicalFiles(node, list);
+                }
+            });
+            return list;
+        }
+
+        // Scan raw note content for headings
+        function extractHeadingsFromMarkdown(content) {
+            if (!content) return [];
+            const lines = content.split('\n');
+            const headings = [];
+            lines.forEach(line => {
+                const match = line.match(/^(#{1,6})\s+(.+)$/);
+                if (match) {
+                    headings.push(match[2].trim());
+                }
+            });
+            return headings;
+        }
+
+        function toggleFolderNode(folderId) {
+            const content = document.getElementById(`${folderId}-content`);
+            const icon = document.getElementById(`${folderId}-icon`);
+            if (content && icon) {
+                if (content.classList.contains('hidden')) {
+                    content.classList.remove('hidden');
+                    icon.style.transform = 'rotate(0deg)';
+                } else {
+                    content.classList.add('hidden');
+                    icon.style.transform = 'rotate(-90deg)';
+                }
+            }
+        }
+
+        function collapseAllFolders() {
+            document.querySelectorAll('[id$="-content"]').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('[id$="-icon"]').forEach(el => el.style.transform = 'rotate(-90deg)');
+        }
+
+        function contextCloseTab() {
+            if (contextMenuTabIndex !== -1) {
+                closeTab(contextMenuTabIndex);
+            }
+            contextMenuTabIndex = -1;
+            const ctxMenu = document.getElementById('tab-context-menu');
+            if (ctxMenu) ctxMenu.classList.add('hidden');
+        }
+
+        function contextCloseOtherTabs() {
+            if (contextMenuTabIndex !== -1) {
+                const keepTab = openTabs[contextMenuTabIndex];
+                openTabs = [keepTab];
+                activeTabIndex = 0;
+                renderTabsList();
+                displayActiveTab();
+                buildFileTree();
+                renderLocalRelations();
+            }
+            contextMenuTabIndex = -1;
+            const ctxMenu = document.getElementById('tab-context-menu');
+            if (ctxMenu) ctxMenu.classList.add('hidden');
+        }
+
+        function handleFileClick(filePath, event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            // Simple click: open in active tab. Ctrl / Cmd click: open in new tab
+            const openInNewTab = event && (event.ctrlKey || event.metaKey);
+            openNoteTab(filePath, openInNewTab);
+        }
+
+        // Render Tabs list - No closing cross buttons requested
+        function renderTabsList() {
+            const tabsBar = document.getElementById('tabs-bar');
+            if (!tabsBar) return;
+            tabsBar.innerHTML = '';
+
+            openTabs.forEach((tab, index) => {
+                const isActive = index === activeTabIndex;
+                let title = '';
+                let icon = 'file-text';
+
+                if (tab.type === 'note') {
+                    const file = vaultData.files[tab.path];
+                    title = file ? file.name : (tab.path.split('/').pop().replace('.md', '') || 'Untitled');
+                    icon = 'file-text';
+                } else if (tab.type === 'graph') {
+                    title = 'Graph View';
+                    icon = 'network';
+                } else if (tab.type === 'welcome') {
+                    title = 'Welcome';
+                    icon = 'book-open';
+                }
+
+                const activeClasses = isActive 
+                    ? 'bg-[#ffffff] text-[#171717] border-t border-x border-[#dfdfdf] font-semibold h-9 rounded-t-md px-3 flex items-center space-x-2 z-10' 
+                    : 'bg-[#ededed] text-[#646464] hover:bg-[#e5e5e5] hover:text-[#171717] h-8 rounded-t px-3 flex items-center space-x-2 cursor-pointer';
+
+                const tabEl = document.createElement('div');
+                tabEl.className = `${activeClasses} text-xs transition-all flex-shrink-0 select-none relative group`;
+                if (!isActive) {
+                    tabEl.onclick = () => selectTab(index);
+                }
+
+                // Attach right click context menu listener
+                tabEl.oncontextmenu = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    showTabContextMenu(index, e.clientX, e.clientY);
+                };
+
+                tabEl.innerHTML = `
+                    <i data-lucide="${icon}" class="w-3.5 h-3.5 opacity-70"></i>
+                    <span class="max-w-[120px] truncate">${title}</span>
+                `;
+
+                tabsBar.appendChild(tabEl);
+            });
+
+            initializeLucide();
+        }
+
+        function showTabContextMenu(tabIndex, x, y) {
+            const ctxMenu = document.getElementById('tab-context-menu');
+            if (!ctxMenu) return;
+
+            contextMenuTabIndex = tabIndex;
+            ctxMenu.style.left = `${x}px`;
+            ctxMenu.style.top = `${y}px`;
+            ctxMenu.classList.remove('hidden');
+        }
+
+        function closeTab(index, event) {
+            if (event) {
+                event.stopPropagation();
+                event.preventDefault();
+            }
+
+            openTabs.splice(index, 1);
+
+            if (openTabs.length === 0) {
+                activeTabIndex = -1;
+            } else {
+                if (activeTabIndex >= openTabs.length) {
+                    activeTabIndex = openTabs.length - 1;
+                }
+            }
+
+            renderTabsList();
+            displayActiveTab();
+            buildFileTree();
+            renderLocalRelations();
+        }
+
+        function displayActiveTab() {
+            const activeTab = openTabs[activeTabIndex];
+
+            // Hide all major workspace panels first
+            safeToggleClass('note-toolbar', 'hidden', true);
+            safeToggleClass('note-preview-pane', 'hidden', true);
+            safeToggleClass('note-graph-pane', 'hidden', true);
+            safeToggleClass('empty-workspace-state', 'hidden', true);
+
+            if (!activeTab) {
+                safeToggleClass('empty-workspace-state', 'hidden', false);
+                updateWordMetrics("");
+                return;
+            }
+
+            // Sync Ribbon active indicator dynamically based on selected tab mode
+            if (activeTab.type === 'graph') {
+                setRibbonActive('ribbon-graph');
+            } else if (activeTab.type === 'note' || activeTab.type === 'welcome') {
+                const searchContainerHidden = document.getElementById('panel-search-container').classList.contains('hidden');
+                if (!searchContainerHidden) {
+                    setRibbonActive('ribbon-search');
+                } else {
+                    setRibbonActive('ribbon-files');
+                }
+            }
+
+            if (activeTab.type === 'note') {
+                const file = vaultData.files[activeTab.path];
+                if (file) {
+                    safeToggleClass('note-toolbar', 'hidden', false);
+                    safeToggleClass('note-preview-pane', 'hidden', false);
+                    
+                    // Update active breadcrumb title
+                    safeSetText('active-breadcrumb-node', file.name);
+                    
+                    // Set the path breadcrumbs hierarchy
+                    const parts = activeTab.path.split('/');
+                    let breadcrumbsHTML = '<span>WIKI</span>';
+                    parts.forEach((part, idx) => {
+                        const isLast = idx === parts.length - 1;
+                        const cleanPart = isLast ? part.replace('.md', '') : part;
+                        breadcrumbsHTML += ` <span class="mx-1 opacity-50">/</span> <span class="${isLast ? 'text-[#171717] font-medium' : ''}">${cleanPart}</span>`;
+                    });
+                    safeSetHTML('toolbar-breadcrumbs', breadcrumbsHTML);
+
+                    // Check if file is exactly "claude.md" for Raw formatting bypass
+                    if (file.name.toLowerCase() === 'claude') {
+                        renderRawMarkdownCode(file.content);
+                    } else {
+                        renderMarkdown(file.content);
+                    }
+                    updateWordMetrics(file.content);
+
+                    // Force viewport page scroll directly to the top
+                    const previewPane = document.getElementById('note-preview-pane');
+                    if (previewPane) {
+                        previewPane.scrollTop = 0;
+                    }
+                } else {
+                    // If file no longer exists, show empty
+                    safeToggleClass('empty-workspace-state', 'hidden', false);
+                    updateWordMetrics("");
+                }
+            } else if (activeTab.type === 'graph') {
+                safeToggleClass('note-graph-pane', 'hidden', false);
+                renderFullscreenGraph();
+                updateWordMetrics("");
+            } else if (activeTab.type === 'welcome') {
+                safeToggleClass('empty-workspace-state', 'hidden', false);
+                updateWordMetrics("");
+            }
+        }
+
+        function openNoteTab(filePath, forceNewTab = false) {
+            if (!vaultData.files[filePath]) return;
+
+            let targetIndex = -1;
+
+            const currentActiveTab = openTabs[activeTabIndex];
+            // Scroll back to the top of preview container and force re-render on re-clicking already open active file
+            if (currentActiveTab && currentActiveTab.type === 'note' && currentActiveTab.path === filePath && !forceNewTab) {
+                const previewPane = document.getElementById('note-preview-pane');
+                if (previewPane) {
+                    previewPane.scrollTop = 0;
+                }
+                displayActiveTab(); // Guarantee clean layout repaint
+                return;
+            }
+
+            if (forceNewTab || openTabs.length === 0) {
+                openTabs.push({ type: 'note', path: filePath });
+                targetIndex = openTabs.length - 1;
+            } else {
+                if (currentActiveTab && (currentActiveTab.type === 'note' || currentActiveTab.type === 'welcome')) {
+                    currentActiveTab.type = 'note';
+                    currentActiveTab.path = filePath;
+                    targetIndex = activeTabIndex;
+                } else {
+                    let existingIndex = openTabs.findIndex(t => t.type === 'note' && t.path === filePath);
+                    if (existingIndex !== -1) {
+                        targetIndex = existingIndex;
+                    } else {
+                        openTabs.push({ type: 'note', path: filePath });
+                        targetIndex = openTabs.length - 1;
+                    }
+                }
+            }
+
+            activeTabIndex = targetIndex;
+            pushHistory(filePath);
+            
+            renderTabsList();
+            displayActiveTab();
+            buildFileTree();
+            renderLocalRelations();
+        }
+
+        function openNewGraphTab() {
+            let foundIndex = openTabs.findIndex(t => t.type === 'graph');
+            if (foundIndex !== -1) {
+                activeTabIndex = foundIndex;
+            } else {
+                openTabs.push({ type: 'graph', id: 'global-graph-view' });
+                activeTabIndex = openTabs.length - 1;
+            }
+
+            // Set Ribbon Active indicators exclusively
+            setRibbonActive('ribbon-graph');
+
+            renderTabsList();
+            displayActiveTab();
+        }
+
+        function createNewTabWithWelcome() {
+            openTabs.push({ type: 'welcome', name: 'Welcome' });
+            activeTabIndex = openTabs.length - 1;
+            renderTabsList();
+            displayActiveTab();
+        }
+
+        function selectTab(index) {
+            if (index < 0 || index >= openTabs.length) return;
+            activeTabIndex = index;
+            renderTabsList();
+            displayActiveTab();
+            renderLocalRelations();
+        }
+
+        // Custom link router supporting target page, specific chapter headings, and alias text
+        function navigateToWikiLink(targetPath, heading, originalMatch, event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+
+            // Shift-Click Link Redirection Trigger
+            if (event && event.shiftKey) {
+                const activeTab = openTabs[activeTabIndex];
+                const activePath = activeTab ? activeTab.path : '';
+                const file = vaultData.files[targetPath];
+                const targetName = file ? file.name : targetPath;
+                handleUnresolvedLinkClick(targetName, activePath, originalMatch, event);
+                return;
+            }
+
+            const foundPath = vaultData.files[targetPath] ? targetPath : locatePathByNoteName(targetPath);
+            if (!foundPath) return;
+            
+            const openInNewTab = event && (event.ctrlKey || event.metaKey);
+            openNoteTab(foundPath, openInNewTab);
+            
+            if (heading) {
+                setTimeout(() => {
+                    scrollToHeading(heading);
+                }, 150);
+            } else {
+                // Ensure page scrolls directly to top if no chapter jump is specified
+                setTimeout(() => {
+                    const previewPane = document.getElementById('note-preview-pane');
+                    if (previewPane) {
+                        previewPane.scrollTop = 0;
+                    }
+                }, 50);
+            }
+        }
+
+        // Search preview canvas for matching heading element
+        function scrollToHeading(headingText) {
+            const previewPane = document.getElementById('note-preview-pane');
+            if (!previewPane) return;
+            
+            // Try normalized ID format
+            const normalizedHeadingId = headingText.toLowerCase().replace(/[^a-z0-9\u00C0-\u017F]+/gi, '-');
+            let targetEl = previewPane.querySelector(`[id="${normalizedHeadingId}"]`);
+            
+            if (!targetEl) {
+                // Fallback: iterate over heading tags
+                const headers = previewPane.querySelectorAll('h1, h2, h3, h4, h5, h6');
+                for (let h of headers) {
+                    if (h.textContent.trim().toLowerCase() === headingText.trim().toLowerCase()) {
+                        targetEl = h;
+                        break;
+                    }
+                }
+            }
+            
+            if (targetEl) {
+                targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                // Briefly flash background to highlight
+                const originalBg = targetEl.style.backgroundColor;
+                targetEl.style.backgroundColor = 'rgba(127, 70, 252, 0.15)';
+                targetEl.style.transition = 'background-color 0.8s ease';
+                setTimeout(() => {
+                    targetEl.style.backgroundColor = originalBg;
+                }, 1000);
+            }
+        }
+
+        // Render "claude.md" in raw text layout, stripping Markdown styling and links
+        function renderRawMarkdownCode(rawText) {
+            const contentBox = document.getElementById('rendered-content');
+            if (!contentBox) return;
+
+            // Escaping tags to render cleanly as raw code
+            const safeEscaped = (rawText || "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+
+            contentBox.innerHTML = `
+                <div class="p-4 rounded border border-[#dfdfdf] bg-[#f5f5f7] font-mono text-xs whitespace-pre-wrap leading-relaxed select-text">
+                    ${safeEscaped}
+                </div>
+            `;
+        }
+
+        function renderMarkdown(rawText) {
+            const contentBox = document.getElementById('rendered-content');
+            if (!contentBox) return;
+
+            const activeTab = openTabs[activeTabIndex];
+            const activePath = activeTab ? activeTab.path : '';
+
+            let parsedText = (rawText || "").replace(/\[\[(.*?)\]\]/g, function(match, elementContent) {
+                const parts = elementContent.split('|');
+                const fullTarget = parts[0].trim();
+                const aliasName = parts[1] ? parts[1].trim() : fullTarget;
+
+                let targetPage = fullTarget;
+                let heading = "";
+
+                if (fullTarget.includes('#')) {
+                    const hashParts = fullTarget.split('#');
+                    targetPage = hashParts[0].trim();
+                    heading = hashParts[1].trim();
+                }
+
+                // If targetPage is blank, link points to heading inside current note
+                const actualPagePath = targetPage ? locatePathByNoteName(targetPage) : activePath;
+                const escapedFullMatch = match.replace(/'/g, "\\'");
+                
+                if (actualPagePath) {
+                    const escapedPagePath = actualPagePath.replace(/'/g, "\\'");
+                    const escapedHeading = heading.replace(/'/g, "\\'");
+                    return `<span class="wikilink" onclick="navigateToWikiLink('${escapedPagePath}', '${escapedHeading}', '${escapedFullMatch}', event)">${aliasName}</span>`;
+                } else {
+                    const escapedTarget = targetPage.replace(/'/g, "\\'");
+                    const escapedPath = activePath.replace(/'/g, "\\'");
+                    return `<span class="wikilink unresolved" onclick="handleUnresolvedLinkClick('${escapedTarget}', '${escapedPath}', '${escapedFullMatch}', event)" title="Unresolved link: Click to repair or hold Shift+Click to redirect">${aliasName}</span>`;
+                }
+            });
+
+            if (window.marked) {
+                let htmlOutput = marked.parse(parsedText);
+                
+                // Inject matching normalized ID tags to Markdown headings so they can scroll into view smoothly
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = htmlOutput;
+                tempDiv.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(header => {
+                    const id = header.textContent.trim().toLowerCase().replace(/[^a-z0-9\u00C0-\u017F]+/gi, '-');
+                    header.setAttribute('id', id);
+                });
+                
+                contentBox.innerHTML = tempDiv.innerHTML;
+            } else {
+                contentBox.innerText = parsedText;
+            }
+            
+            // Checkbox logic for checklist rendering
+            contentBox.querySelectorAll('li').forEach(li => {
+                if (li.innerHTML.startsWith('[x]') || li.innerHTML.startsWith('[X]')) {
+                    li.innerHTML = `<input type="checkbox" checked disabled class="mr-2 accent-[#7f46fc]">` + li.innerHTML.substring(3);
+                    li.style.listStyleType = 'none';
+                } else if (li.innerHTML.startsWith('[ ]')) {
+                    li.innerHTML = `<input type="checkbox" disabled class="mr-2 accent-[#7f46fc]">` + li.innerHTML.substring(3);
+                    li.style.listStyleType = 'none';
+                }
+            });
+
+            // If a search query is currently active, highlight all matches within the newly rendered markdown box
+            if (currentSearchQuery && currentSearchQuery.trim() !== "") {
+                highlightSearchQuery(contentBox, currentSearchQuery);
+            }
+
+            initializeLucide();
+        }
+
+        function locatePathByNoteName(noteName) {
+            const paths = Object.keys(vaultData.files);
+            let match = paths.find(p => vaultData.files[p].name.toLowerCase() === noteName.toLowerCase());
+            if (match) return match;
+
+            match = paths.find(p => {
+                const subParts = p.split('/');
+                const baseName = subParts[subParts.length - 1].replace('.md', '');
+                return baseName.toLowerCase() === noteName.toLowerCase();
+            });
+            return match;
+        }
+
+        // Dialog logic for single-wikilink redirection (Two-step setup)
+        function handleUnresolvedLinkClick(targetName, sourcePath, fullMatch, event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            activeUnresolvedLink = { targetName, sourcePath, fullMatch };
+
+            safeSetText('unresolved-link-title', `Configure Link: [[${targetName}]]`);
+
+            // Populate Step 1 select list (Pages only)
+            populatePagesDropdown('unresolved-link-page-select');
+            
+            // Hide step 2 select initially
+            const chapterContainer = document.getElementById('unresolved-link-chapter-container');
+            if (chapterContainer) chapterContainer.classList.add('hidden');
+            const chapterSelect = document.getElementById('unresolved-link-chapter-select');
+            if (chapterSelect) chapterSelect.innerHTML = '';
+
+            safeToggleClass('resolve-link-action-modal', 'hidden', false);
+        }
+
+        function onUnresolvedPageSelectChange() {
+            const pageSelect = document.getElementById('unresolved-link-page-select');
+            const chapterContainer = document.getElementById('unresolved-link-chapter-container');
+            const chapterSelect = document.getElementById('unresolved-link-chapter-select');
+
+            if (!pageSelect || !chapterContainer || !chapterSelect) return;
+
+            const selectedPageName = pageSelect.value;
+            if (!selectedPageName) {
+                chapterContainer.classList.add('hidden');
+                chapterSelect.innerHTML = '';
+                return;
+            }
+
+            const path = locatePathByNoteName(selectedPageName);
+            const file = vaultData.files[path];
+            if (file) {
+                const headings = extractHeadingsFromMarkdown(file.content);
+                if (headings.length > 0) {
+                    chapterSelect.innerHTML = '<option value="">-- Link to Page Directly (No Chapter) --</option>';
+                    headings.forEach(h => {
+                        const opt = document.createElement('option');
+                        opt.value = h;
+                        opt.textContent = h;
+                        chapterSelect.appendChild(opt);
+                    });
+                    chapterContainer.classList.remove('hidden');
+                } else {
+                    chapterContainer.classList.add('hidden');
+                    chapterSelect.innerHTML = '';
+                }
+            } else {
+                chapterContainer.classList.add('hidden');
+                chapterSelect.innerHTML = '';
+            }
+        }
+
+        function closeResolveLinkActionModal() {
+            safeToggleClass('resolve-link-action-modal', 'hidden', true);
+            activeUnresolvedLink = null;
+        }
+
+        async function resolveUnresolvedWithNew() {
+            if (!activeUnresolvedLink) return;
+            const noteName = activeUnresolvedLink.targetName;
+            closeResolveLinkActionModal();
+            await createNewNoteFromWikiLink(noteName);
+        }
+
+        async function resolveUnresolvedWithExisting() {
+            if (!activeUnresolvedLink) return;
+            const pageSelect = document.getElementById('unresolved-link-page-select');
+            const chapterSelect = document.getElementById('unresolved-link-chapter-select');
+
+            if (!pageSelect || !pageSelect.value) {
+                showNotification("Please select an existing target note.", "warning");
+                return;
+            }
+
+            let chosenExistingName = pageSelect.value;
+            if (chapterSelect && chapterSelect.value) {
+                chosenExistingName += `#${chapterSelect.value}`;
+            }
+
+            const { sourcePath, fullMatch } = activeUnresolvedLink;
+
+            closeResolveLinkActionModal();
+            await applyLinkRewrite(sourcePath, fullMatch, chosenExistingName);
+        }
+
+        async function createNewNoteFromWikiLink(noteName) {
+            const formattedPath = `WIKI/${noteName}.md`;
+            let handle = null;
+
+            if (dirHandle) {
+                try {
+                    let targetDir = dirHandle;
+                    const folderName = "WIKI";
+                    targetDir = await dirHandle.getDirectoryHandle(folderName, { create: true });
+                    const fileHandle = await targetDir.getFileHandle(`${noteName}.md`, { create: true });
+                    handle = fileHandle;
+                } catch (err) {
+                    console.error("Could not physically create wikilink file on disk: ", err);
+                }
+            }
+
+            vaultData.files[formattedPath] = {
+                name: noteName,
+                path: formattedPath,
+                content: `# ${noteName}\n\nThis note was automatically created.`,
+                size: 0,
+                folder: "WIKI",
+                handle: handle
+            };
+
+            buildFileTree();
+            updateStatusBar();
+            openNoteTab(formattedPath);
+            openEditModal();
+        }
+
+        async function applyLinkRewrite(sourcePath, oldMatchText, newTargetName, aliasText = null) {
+            const file = vaultData.files[sourcePath];
+            if (!file) return;
+
+            let replacement = `[[${newTargetName}`;
+            if (aliasText && aliasText !== newTargetName) {
+                replacement += `|${aliasText}`;
+            } else if (!aliasText && oldMatchText.includes('|')) {
+                const oldAlias = oldMatchText.split('|')[1].replace(']]', '').trim();
+                if (oldAlias !== newTargetName) {
+                    replacement += `|${oldAlias}`;
+                }
+            }
+            replacement += `]]`;
+
+            file.content = file.content.replaceAll(oldMatchText, replacement);
+
+            if (file.handle) {
+                try {
+                    const writable = await file.handle.createWritable();
+                    await writable.write(file.content);
+                    await writable.close();
+                    showNotification("Link successfully corrected on storage disk!", "success");
+                } catch (err) {
+                    console.error("Failed to write link update to disk: ", err);
+                    showNotification("Direct disk connection failed. Link updated inside workspace runtime.", "warning");
+                }
+            } else {
+                showNotification("Link corrected in workspace (Read-Only session)", "warning");
+            }
+
+            buildFileTree();
+            updateStatusBar();
+            displayActiveTab();
+            renderLocalRelations();
+        }
+
+        function pushHistory(path) {
+            if (historyIndex < navigationHistory.length - 1) {
+                navigationHistory = navigationHistory.slice(0, historyIndex + 1);
+            }
+            navigationHistory.push(path);
+            historyIndex = navigationHistory.length - 1;
+        }
+
+        function navigateHistory(direction) {
+            const targetIndex = historyIndex + direction;
+            if (targetIndex >= 0 && targetIndex < navigationHistory.length) {
+                historyIndex = targetIndex;
+                const path = navigationHistory[historyIndex];
+                if (vaultData.files[path]) {
+                    openNoteTab(path);
+                }
+            }
+        }
+
+        function openEditModal() {
+            const activeTab = openTabs[activeTabIndex];
+            if (!activeTab || activeTab.type !== 'note') return;
+
+            const file = vaultData.files[activeTab.path];
+            if (!file) return;
+
+            const titleInput = document.getElementById('edit-modal-title-input');
+            const txtArea = document.getElementById('edit-modal-textarea');
+            
+            if (titleInput) titleInput.value = file.name;
+            if (txtArea) txtArea.value = file.content;
+            
+            safeSetText('edit-modal-title', `Edit Document: ${file.name}`);
+            safeToggleClass('edit-modal', 'hidden', false);
+        }
+
+        async function closeEditModal(shouldSave) {
+            safeToggleClass('edit-modal', 'hidden', true);
+
+            if (!shouldSave) return;
+
+            const activeTab = openTabs[activeTabIndex];
+            if (!activeTab || activeTab.type !== 'note') return;
+
+            const oldPath = activeTab.path;
+            const file = vaultData.files[oldPath];
+            if (!file) return;
+
+            const titleInput = document.getElementById('edit-modal-title-input');
+            const txtArea = document.getElementById('edit-modal-textarea');
+
+            if (!titleInput || !txtArea) return;
+
+            const newTitle = titleInput.value.trim();
+            const newContent = txtArea.value;
+
+            if (!newTitle) return;
+
+            file.content = newContent;
+
+            if (file.handle) {
+                try {
+                    const writable = await file.handle.createWritable();
+                    await writable.write(newContent);
+                    await writable.close();
+                    showNotification("File successfully saved to disk drive!", "success");
+                } catch (err) {
+                    console.error("Direct saving write failed: ", err);
+                    showNotification("Write permission error: " + err.message, "error");
+                }
+            } else {
+                showNotification("Workspace cache updated (Read-Only fallback)", "warning");
+            }
+            
+            if (newTitle !== file.name) {
+                file.name = newTitle;
+                
+                const parts = oldPath.split('/');
+                parts[parts.length - 1] = `${newTitle}.md`;
+                const newPath = parts.join('/');
+
+                if (newPath !== oldPath) {
+                    vaultData.files[newPath] = file;
+                    file.path = newPath;
+                    delete vaultData.files[oldPath];
+
+                    openTabs.forEach(t => {
+                        if (t.type === 'note' && t.path === oldPath) {
+                            t.path = newPath;
+                        }
+                    });
+                }
+            }
+
+            buildFileTree();
+            updateStatusBar();
+            renderTabsList();
+            displayActiveTab();
+            renderLocalRelations();
+        }
+
+        function renderFullscreenGraph() {
+            const container = document.getElementById('note-graph-pane');
+            const svg = d3.select("#fullscreen-graph-svg");
+            
+            if (!container || svg.empty()) return;
+            svg.selectAll("*").remove();
+
+            // Sizing metrics - Deduct the h-10 header toolbar height for correct rendering
+            const width = container.clientWidth || window.innerWidth;
+            const height = (container.clientHeight - 40) || window.innerHeight;
+
+            // Gather active filter folders list
+            const uniqueFolders = getUniqueVaultFolders();
+            const folderFilters = selectedGraphFolders.length > 0 ? selectedGraphFolders : uniqueFolders;
+
+            // Filter out index.md and claude.md dynamically if ROOT folder filter is not explicitly active
+            const nodes = Object.keys(vaultData.files)
+                .filter(p => {
+                    const lowerPath = p.toLowerCase();
+                    const isExcludedFile = lowerPath === 'index.md' || lowerPath === 'claude.md' || lowerPath.endsWith('/index.md') || lowerPath.endsWith('/claude.md');
+                    const belongsToFilterFolder = folderFilters.includes(vaultData.files[p].folder);
+                    
+                    // Exclude index and claude unless root folder filter is fully applied
+                    if (isExcludedFile) {
+                        return belongsToFilterFolder; 
+                    }
+                    return belongsToFilterFolder;
+                })
+                .map(p => ({
+                    id: p,
+                    name: vaultData.files[p].name
+                }));
+
+            const nodeIds = new Set(nodes.map(n => n.id));
+
+            const links = [];
+            Object.keys(vaultData.files).forEach(sourcePath => {
+                if (!nodeIds.has(sourcePath)) return;
+                const file = vaultData.files[sourcePath];
+                const wikiLinkRegex = /\[\[(.*?)\]\]/g;
+                let match;
+                
+                while ((match = wikiLinkRegex.exec(file.content)) !== null) {
+                    const fullTarget = match[1].split('|')[0].trim();
+                    const targetName = fullTarget.includes('#') ? fullTarget.split('#')[0].trim() : fullTarget;
+                    const targetPath = locatePathByNoteName(targetName);
+                    
+                    if (targetPath && targetPath !== sourcePath && nodeIds.has(targetPath)) {
+                        links.push({
+                            source: sourcePath,
+                            target: targetPath
+                        });
+                    }
+                }
+            });
+
+            const gContainer = svg.append("g");
+
+            const zoomBehavior = d3.zoom()
+                .scaleExtent([0.15, 3.5])
+                .on("zoom", (e) => {
+                    gContainer.attr("transform", e.transform);
+                });
+
+            svg.call(zoomBehavior);
+
+            // GRAPH VIEW SPACING OPTIMIZATION: High repulsion force and comfortable distance settings to prevent clutter
+            globalGraphSimulation = d3.forceSimulation(nodes)
+                .force("link", d3.forceLink(links).id(d => d.id).distance(220)) // Placed farther apart
+                .force("charge", d3.forceManyBody().strength(-350)) // Stronger node repulsion
+                .force("center", d3.forceCenter(width / 2, height / 2))
+                .force("collision", d3.forceCollide().radius(65)); // Safety radius around text nodes
+
+            const link = gContainer.append("g")
+                .selectAll("line")
+                .data(links)
+                .join("line")
+                .attr("class", "graph-link");
+
+            const node = gContainer.append("g")
+                .selectAll("g")
+                .data(nodes)
+                .join("g")
+                .call(d3.drag()
+                    .on("start", (event, d) => {
+                        if (!event.active) globalGraphSimulation.alphaTarget(0.2).restart();
+                        d.fx = d.x;
+                        d.fy = d.y;
+                    })
+                    .on("drag", (event, d) => {
+                        d.fx = event.x;
+                        d.fy = event.y;
+                    })
+                    .on("end", (event, d) => {
+                        if (!event.active) globalGraphSimulation.alphaTarget(0);
+                        d.fx = null;
+                        d.fy = null;
+                    }));
+
+            // Circles render
+            const circles = node.append("circle")
+                .attr("r", 9)
+                .attr("class", "graph-node")
+                .attr("fill", d => {
+                    if (activeGraphNodeId === d.id) return "#7f46fc"; // Clicked Dot active highlight
+                    const activeTab = openTabs[activeTabIndex];
+                    const isSelected = (activeTab && activeTab.type === 'note' && activeTab.path === d.id);
+                    return isSelected ? "#7f46fc" : "#a8a29e";
+                });
+
+            // Clean labels rendered directly below dots with toggling state and 30-character text wrapping
+            const textLabels = node.append("text")
+                .attr("text-anchor", "middle")
+                .attr("class", "graph-text")
+                .style("display", showGraphLabels ? "block" : "none")
+                .style("fill", "#a3a3a3") // Default Light Gray
+                .style("font-size", "10px");
+
+            textLabels.each(function(d) {
+                const el = d3.select(this);
+                // Wrap text dynamically at 30 characters
+                const name = d.name;
+                const chunkCount = Math.ceil(name.length / 30);
+                const words = [];
+                for (let i = 0; i < chunkCount; i++) {
+                    words.push(name.substring(i * 30, (i + 1) * 30));
+                }
+                words.forEach((word, i) => {
+                    el.append("tspan")
+                        .text(word)
+                        .attr("x", 0)
+                        .attr("dy", i === 0 ? "18px" : "11px");
+                });
+            });
+
+            // Native hover title tooltip for raw SVG elements
+            node.append("title")
+                .text(d => d.name);
+
+            // Left clicking Dot highlights connections on first-degree lines and triggers neighbor black text
+            circles.on("click", (event, d) => {
+                event.preventDefault();
+                event.stopPropagation();
+                
+                // Toggle clicked highlight state
+                if (activeGraphNodeId === d.id) {
+                    activeGraphNodeId = null;
+                } else {
+                    activeGraphNodeId = d.id;
+                }
+
+                // Determine connected neighbor nodes
+                const connectedNeighbors = new Set();
+                if (activeGraphNodeId) {
+                    links.forEach(l => {
+                        if (l.source.id === activeGraphNodeId) connectedNeighbors.add(l.target.id);
+                        if (l.target.id === activeGraphNodeId) connectedNeighbors.add(l.source.id);
+                    });
+                }
+
+                // Repaint Node Dots
+                circles.transition().duration(150).attr("fill", n => {
+                    if (n.id === activeGraphNodeId) return "#7f46fc"; // Selected high purple highlight
+                    if (connectedNeighbors.has(n.id)) return "#5b21b6"; // Purple shade for connections
+                    return "#a8a29e";
+                });
+
+                // Repaint Labels: Neighbor nodes black, others standard light-gray
+                textLabels.transition().duration(150)
+                    .style("fill", n => {
+                        if (n.id === activeGraphNodeId) return "#7f46fc";
+                        if (connectedNeighbors.has(n.id)) return "#000000"; // neighbors black
+                        return "#a3a3a3";
+                    })
+                    .style("font-weight", n => {
+                        if (n.id === activeGraphNodeId || connectedNeighbors.has(n.id)) return "700";
+                        return "400";
+                    });
+
+                // Dim/highlight connection lines
+                link.transition().duration(150)
+                    .style("stroke-opacity", l => {
+                        if (!activeGraphNodeId) return 0.5;
+                        if (l.source.id === activeGraphNodeId || l.target.id === activeGraphNodeId) return 0.95;
+                        return 0.15;
+                    })
+                    .style("stroke", l => {
+                        if (l.source.id === activeGraphNodeId || l.target.id === activeGraphNodeId) return "#7f46fc";
+                        return "#cbcbcb";
+                    });
+            });
+
+            // Click on empty space inside SVG canvas resets all node/label highlights
+            svg.on("click", (event) => {
+                if (event.target === svg.node()) {
+                    activeGraphNodeId = null;
+                    
+                    // Reset circles
+                    circles.transition().duration(150).attr("fill", n => {
+                        const activeTab = openTabs[activeTabIndex];
+                        const isSelected = (activeTab && activeTab.type === 'note' && activeTab.path === n.id);
+                        return isSelected ? "#7f46fc" : "#a8a29e";
+                    });
+
+                    // Reset text label colors to standard light gray
+                    textLabels.transition().duration(150)
+                        .style("fill", "#a3a3a3")
+                        .style("font-weight", "400");
+
+                    // Reset link opacity
+                    link.transition().duration(150)
+                        .style("stroke-opacity", 0.5)
+                        .style("stroke", "#cbcbcb");
+                }
+            });
+
+            // Hovering text label scale increases, dims other text labels to absolute pale light
+            node.on("mouseover", function(event, d) {
+                // Dim all other text labels
+                textLabels.filter(n => n.id !== d.id)
+                    .transition()
+                    .duration(150)
+                    .style("opacity", 0.15);
+
+                // Highlight hovered element
+                d3.select(this).select("text")
+                    .transition()
+                    .duration(150)
+                    .style("fill", "#000000")
+                    .style("font-size", "11px")
+                    .style("font-weight", "600");
+            }).on("mouseout", function(event, d) {
+                // Restore labels
+                textLabels.transition().duration(150).style("opacity", 1);
+                
+                // Reapply click-highlight configurations if a node is currently clicked
+                const connectedNeighbors = new Set();
+                if (activeGraphNodeId) {
+                    links.forEach(l => {
+                        if (l.source.id === activeGraphNodeId) connectedNeighbors.add(l.target.id);
+                        if (l.target.id === activeGraphNodeId) connectedNeighbors.add(l.source.id);
+                    });
+                }
+
+                d3.select(this).select("text")
+                    .transition()
+                    .duration(150)
+                    .style("fill", n => {
+                        if (n.id === activeGraphNodeId) return "#7f46fc";
+                        if (connectedNeighbors.has(n.id)) return "#000000";
+                        return "#a3a3a3";
+                    })
+                    .style("font-size", "10px")
+                    .style("font-weight", n => {
+                        if (n.id === activeGraphNodeId || connectedNeighbors.has(n.id)) return "700";
+                        return "400";
+                    });
+            });
+
+            // Clicking label text directly opens the document
+            node.selectAll("text").on("click", (event, d) => {
+                event.preventDefault();
+                event.stopPropagation();
+                handleFileClick(d.id, event);
+            });
+
+            globalGraphSimulation.on("tick", () => {
+                link
+                    .attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+
+                node
+                    .attr("transform", d => `translate(${d.x}, ${d.y})`);
+            });
+        }
+
+        function rebuildFullscreenGraph() {
+            showNotification("Rebuilding interactive graph view...", "info");
+            renderFullscreenGraph();
+        }
+
+        function toggleGraphLabels() {
+            showGraphLabels = !showGraphLabels;
+            const btn = document.getElementById('graph-label-toggle-btn');
+            if (btn) {
+                btn.innerText = showGraphLabels ? "Hide Labels" : "Show Labels";
+            }
+            d3.selectAll(".graph-text").style("display", showGraphLabels ? "block" : "none");
+        }
+
+        // Gather unique folder names represented inside active files map
+        function getUniqueVaultFolders() {
+            const folders = new Set();
+            Object.keys(vaultData.files).forEach(p => {
+                const file = vaultData.files[p];
+                folders.add(file.folder || "ROOT");
+            });
+            return Array.from(folders).sort();
+        }
+
+        // Folder filtering actions in graph modal
+        function openGraphFolderFilterModal() {
+            const container = document.getElementById('graph-folder-checkbox-list');
+            if (!container) return;
+            container.innerHTML = '';
+            
+            const uniqueFolders = getUniqueVaultFolders();
+            
+            uniqueFolders.forEach(folderName => {
+                const isChecked = selectedGraphFolders.includes(folderName);
+                const checkboxId = `graph-folder-chk-${folderName.replace(/\s+/g, '_')}`;
+                
+                const div = document.createElement('div');
+                div.className = 'flex items-center space-x-2 text-xs py-1 hover:bg-[#f6f6f6] px-1 rounded transition';
+                div.innerHTML = `
+                    <input type="checkbox" id="${checkboxId}" value="${folderName}" ${isChecked ? 'checked' : ''} class="accent-[#7f46fc] cursor-pointer">
+                    <label for="${checkboxId}" class="cursor-pointer text-[#171717] select-none truncate w-full" title="${folderName}">${folderName}</label>
+                `;
+                container.appendChild(div);
+            });
+            
+            safeToggleClass('graph-folder-filter-modal', 'hidden', false);
+        }
+
+        function toggleAllGraphFolders(select) {
+            const checkboxes = document.querySelectorAll('#graph-folder-checkbox-list input[type="checkbox"]');
+            checkboxes.forEach(chk => chk.checked = select);
+        }
+
+        function closeGraphFolderFilterModal() {
+            safeToggleClass('graph-folder-filter-modal', 'hidden', true);
+        }
+
+        function applyGraphFolderFilter() {
+            const checkboxes = document.querySelectorAll('#graph-folder-checkbox-list input[type="checkbox"]');
+            selectedGraphFolders = [];
+            checkboxes.forEach(chk => {
+                if (chk.checked) {
+                    selectedGraphFolders.push(chk.value);
+                }
+            });
+            
+            closeGraphFolderFilterModal();
+            renderFullscreenGraph();
+        }
+
+        function renderLocalRelations() {
+            const container = document.getElementById('local-graph-container');
+            if (!container) return;
+
+            const activeTab = openTabs[activeTabIndex];
+            if (!activeTab || activeTab.type !== 'note') {
+                container.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-full p-4 text-center text-xs text-[#646464]">
+                        <i data-lucide="info" class="w-8 h-8 opacity-40 mb-2 text-[#7f46fc]"></i>
+                        <span>No note currently active.</span>
+                    </div>
+                `;
+                initializeLucide();
+                return;
+            }
+
+            const currentPath = activeTab.path;
+            const currentFile = vaultData.files[currentPath];
+            if (!currentFile) return;
+
+            const outgoing = [];
+            const wikiLinkRegex = /\[\[(.*?)\]\]/g;
+            let match;
+            while ((match = wikiLinkRegex.exec(currentFile.content || "")) !== null) {
+                const fullTarget = match[1].split('|')[0].trim();
+                const targetName = fullTarget.includes('#') ? fullTarget.split('#')[0].trim() : fullTarget;
+                const targetPath = locatePathByNoteName(targetName);
+                if (targetPath && !outgoing.includes(targetPath) && targetPath !== currentPath) {
+                    outgoing.push(targetPath);
+                }
+            }
+
+            const incoming = [];
+            Object.keys(vaultData.files).forEach(path => {
+                if (path === currentPath) return;
+                const file = vaultData.files[path];
+                const linkRegex = new RegExp(`\\[\\[${escapeRegExp(currentFile.name)}(\\|.*?)?\\]\\]`, 'i');
+                if (linkRegex.test(file.content || "")) {
+                    incoming.push(path);
+                }
+            });
+
+            let html = `
+                <div class="p-4 space-y-4 text-xs overflow-y-auto h-full">
+            `;
+
+            html += `
+                    <div class="space-y-1">
+                        <div class="text-[10px] font-bold text-[#646464] uppercase tracking-wider flex items-center justify-between">
+                            <span>Outgoing Connections (${outgoing.length})</span>
+                            <i data-lucide="arrow-right-left" class="w-3 h-3 text-[#646464]"></i>
+                        </div>
+                        <div class="space-y-1 pl-2 border-l border-[#dfdfdf]">
+            `;
+            if (outgoing.length === 0) {
+                html += `<div class="text-[11px] text-[#646464] italic py-1">No outgoing links discovered</div>`;
+            } else {
+                outgoing.forEach(path => {
+                    const file = vaultData.files[path];
+                    html += `
+                        <div onclick="handleFileClick('${path}', event)" class="flex items-center space-x-2 p-1.5 rounded hover:bg-black/5 text-[#444444] hover:text-black cursor-pointer transition truncate">
+                            <i data-lucide="corner-down-right" class="w-3 h-3 text-[#7f46fc] opacity-70"></i>
+                            <span class="truncate" title="${file ? file.name : path}">${file ? file.name : path}</span>
+                        </div>
+                    `;
+                });
+            }
+            html += `
+                        </div>
+                    </div>
+            `;
+
+            html += `
+                    <div class="space-y-1">
+                        <div class="text-[10px] font-bold text-[#646464] uppercase tracking-wider flex items-center justify-between">
+                            <span>Backlinks Incoming (${incoming.length})</span>
+                            <i data-lucide="link-2" class="w-3 h-3 text-[#646464]"></i>
+                        </div>
+                        <div class="space-y-1 pl-2 border-l border-[#dfdfdf]">
+            `;
+            if (incoming.length === 0) {
+                html += `<div class="text-[11px] text-[#646464] italic py-1">No inbound backlinks found</div>`;
+            } else {
+                incoming.forEach(path => {
+                    const file = vaultData.files[path];
+                    html += `
+                        <div onclick="handleFileClick('${path}', event)" class="flex items-center space-x-2 p-1.5 rounded hover:bg-black/5 text-[#444444] hover:text-black cursor-pointer transition truncate">
+                            <i data-lucide="corner-down-left" class="w-3 h-3 text-emerald-600 opacity-70"></i>
+                            <span class="truncate" title="${file ? file.name : path}">${file ? file.name : path}</span>
+                        </div>
+                    `;
+                });
+            }
+            html += `
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = html;
+            initializeLucide();
+        }
+
+        // Trigger local folder exploration
+        function openLocalFolderPrompt() {
+            if (dirHandle) {
+                showNotification("Active Vault directory handle: " + dirHandle.name + ". Browsers restrict direct Finder/Explorer launches, please search this directory in Finder/Explorer.", "info");
+            } else {
+                showNotification("Vault selected via read-only upload. To sync, open the directory using 'Select Vault Folder'.", "warning");
+            }
+        }
+
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function runSearch(query) {
+            const resultsContainer = document.getElementById('search-results-list');
+            if (!resultsContainer) return;
+
+            resultsContainer.innerHTML = '';
+            currentSearchQuery = query; // Store query globally to trigger markdown preview word highlighting
+
+            if (!query.trim()) {
+                resultsContainer.innerHTML = '<div class="text-center opacity-50 py-4">Type a query above.</div>';
+                return;
+            }
+
+            const matched = [];
+            const q = query.toLowerCase();
+
+            Object.keys(vaultData.files).forEach(path => {
+                const file = vaultData.files[path];
+                const titleHit = file.name.toLowerCase().includes(q);
+                const contentIndex = (file.content || "").toLowerCase().indexOf(q);
+
+                if (titleHit || contentIndex !== -1) {
+                    let preview = "...";
+                    if (contentIndex !== -1) {
+                        const start = Math.max(0, contentIndex - 15);
+                        const end = Math.min(file.content.length, contentIndex + 35);
+                        preview = file.content.substring(start, end).replace(/\n/g, ' ');
+                    }
+                    matched.push({ file, preview });
+                }
+            });
+
+            if (matched.length === 0) {
+                resultsContainer.innerHTML = '<div class="text-center opacity-50 py-4">No search hits found.</div>';
+                return;
+            }
+
+            matched.forEach(item => {
+                resultsContainer.innerHTML += `
+                    <div onclick="handleFileClick('${item.file.path}', event)" class="p-2 rounded bg-[#f6f6f6] hover:bg-purple-500/10 border border-[#dfdfdf] cursor-pointer transition">
+                        <div class="font-bold text-xs text-[#7f46fc]">${item.file.name}</div>
+                        <div class="text-[10px] opacity-70 mt-1 truncate text-[#646464]">${item.preview}</div>
+                    </div>
+                `;
+            });
+
+            // Update active note if currently viewed to reflect new term highlights immediately
+            const activeTab = openTabs[activeTabIndex];
+            if (activeTab && activeTab.type === 'note') {
+                const file = vaultData.files[activeTab.path];
+                if (file) {
+                    if (file.name.toLowerCase() === 'claude') {
+                        renderRawMarkdownCode(file.content);
+                    } else {
+                        renderMarkdown(file.content);
+                    }
+                }
+            }
+        }
+
+        // Panel Switch Actions: Removes term highlighting when switching from Search panel to Files panel
+        function showPanel(panelName) {
+            safeToggleClass('panel-files-container', 'hidden', true);
+            safeToggleClass('panel-search-container', 'hidden', true);
+            
+            if (panelName === 'files') {
+                safeToggleClass('panel-files-container', 'hidden', false);
+                setRibbonActive('ribbon-files');
+                safeSetText('explorer-title', 'Files');
+
+                // Clear highlights when reverting back to Folder view
+                currentSearchQuery = "";
+                const activeTab = openTabs[activeTabIndex];
+                if (activeTab && activeTab.type === 'note') {
+                    const file = vaultData.files[activeTab.path];
+                    if (file) {
+                        if (file.name.toLowerCase() === 'claude') {
+                            renderRawMarkdownCode(file.content);
+                        } else {
+                            renderMarkdown(file.content);
+                        }
+                    }
+                }
+            } else if (panelName === 'search') {
+                safeToggleClass('panel-search-container', 'hidden', false);
+                setRibbonActive('ribbon-search');
+                safeSetText('explorer-title', 'Search');
+            }
+        }
+
+        // Fix ribbon selection bug to prevent persistent file explorer purple styling
+        function setRibbonActive(activeId) {
+            const fileBtn = document.getElementById('ribbon-files');
+            const searchBtn = document.getElementById('ribbon-search');
+            const graphBtn = document.getElementById('ribbon-graph');
+
+            if (fileBtn) {
+                fileBtn.classList.remove('ribbon-item-active');
+                fileBtn.classList.add('text-[#646464]', 'hover:text-[#171717]');
+            }
+            if (searchBtn) {
+                searchBtn.classList.remove('ribbon-item-active');
+                searchBtn.classList.add('text-[#646464]', 'hover:text-[#171717]');
+            }
+            if (graphBtn) {
+                graphBtn.classList.remove('ribbon-item-active');
+                graphBtn.classList.add('text-[#646464]', 'hover:text-[#171717]');
+            }
+
+            const targetBtn = document.getElementById(activeId);
+            if (targetBtn) {
+                targetBtn.classList.add('ribbon-item-active');
+                targetBtn.classList.remove('text-[#646464]', 'hover:text-[#171717]');
+            }
+        }
+
+        function scanForBrokenLinks() {
+            let brokenLinks = [];
+            const wikiLinkRegex = /\[\[(.*?)\]\]/g;
+
+            Object.keys(vaultData.files).forEach(sourcePath => {
+                // Ignore links inside claude.md as these are simply prompt assets and guidelines
+                if (sourcePath.toLowerCase().endsWith('claude.md')) {
+                    return;
+                }
+
+                const file = vaultData.files[sourcePath];
+                const content = file.content || "";
+                let match;
+
+                wikiLinkRegex.lastIndex = 0;
+
+                while ((match = wikiLinkRegex.exec(content)) !== null) {
+                    const fullMatch = match[0];
+                    const innerText = match[1];
+                    const parts = innerText.split('|');
+                    const targetPageWithHeading = parts[0].trim();
+                    const aliasName = parts[1] ? parts[1].trim() : targetPageWithHeading;
+
+                    // Support heading split targets
+                    const targetName = targetPageWithHeading.includes('#') ? targetPageWithHeading.split('#')[0].trim() : targetPageWithHeading;
+
+                    // Blank means referencing heading in current note
+                    const targetPath = targetName ? locatePathByNoteName(targetName) : sourcePath;
+                    
+                    if (!targetPath) {
+                        const index = match.index;
+                        const paragraph = getSurroundingParagraph(content, index);
+                        brokenLinks.push({
+                            sourcePath: sourcePath,
+                            sourceName: file.name,
+                            fullMatch: fullMatch,
+                            targetName: targetName,
+                            aliasName: aliasName,
+                            paragraph: paragraph,
+                            index: index
+                        });
+                    }
+                }
+            });
+
+            return brokenLinks;
+        }
+
+        // Dynamically style the Repair Button color based on presence of broken links
+        function updateRepairButtonColor() {
+            const brokenLinks = scanForBrokenLinks();
+            const btn = document.getElementById('ribbon-repair-btn');
+            if (btn) {
+                if (brokenLinks.length > 0) {
+                    // Highlight red if unresolved links exist
+                    btn.className = "p-2 w-full flex justify-center text-[#dc2626] hover:text-red-700 transition-all";
+                } else {
+                    // Revert to neutral colorless state
+                    btn.className = "p-2 w-full flex justify-center text-[#646464] hover:text-[#171717] transition-all";
+                }
+            }
+        }
+
+        function getSurroundingParagraph(text, index) {
+            const start = Math.max(0, text.lastIndexOf('\n\n', index));
+            let end = text.indexOf('\n\n', index);
+            if (end === -1) end = text.length;
+            
+            let paragraph = text.substring(start, end).trim();
+            if (paragraph.length > 200) {
+                const localStart = Math.max(0, index - start - 50);
+                paragraph = "..." + paragraph.substring(localStart, localStart + 150) + "...";
+            }
+            return paragraph;
+        }
+
+        // Populates page selector ONLY for two-step routing
+        function populatePagesDropdown(selectId) {
+            const select = document.getElementById(selectId);
+            if (!select) return;
+
+            select.innerHTML = '<option value="">-- Choose Target Note --</option>';
+
+            const sortedFiles = getFlattenedHierarchicalFiles();
+            sortedFiles.forEach(path => {
+                const f = vaultData.files[path];
+                if (!f) return;
+
+                const option = document.createElement('option');
+                option.value = f.name;
+                option.textContent = f.name;
+                select.appendChild(option);
+            });
+        }
+
+        function openBrokenLinksModal() {
+            const brokenLinks = scanForBrokenLinks();
+            const listContainer = document.getElementById('broken-links-list');
+            safeSetText('broken-links-count-display', `${brokenLinks.length} unresolved links found`);
+
+            if (!listContainer) return;
+            listContainer.innerHTML = '';
+
+            if (brokenLinks.length === 0) {
+                listContainer.innerHTML = `
+                    <div class="flex flex-col items-center justify-center py-12 text-[#646464] space-y-2">
+                        <i data-lucide="check-circle-2" class="w-12 h-12 text-[#7f46fc]"></i>
+                        <span class="font-bold text-sm">Perfect! No broken connections found.</span>
+                        <span class="text-xs">All internal wikilinks map cleanly to existing notes inside your vault.</span>
+                    </div>
+                `;
+                safeToggleClass('broken-links-modal', 'hidden', false);
+                initializeLucide();
+                return;
+            }
+
+            brokenLinks.forEach((linkInfo, idx) => {
+                const selectId = `broken-page-select-${idx}`;
+                const chapterContainerId = `broken-chapter-container-${idx}`;
+                const chapterSelectId = `broken-chapter-select-${idx}`;
+                const escapedSourcePath = linkInfo.sourcePath.replace(/'/g, "\\'");
+                const escapedFullMatch = linkInfo.fullMatch.replace(/'/g, "\\'");
+                const escapedAliasName = linkInfo.aliasName.replace(/'/g, "\\'");
+
+                listContainer.innerHTML += `
+                    <div class="p-3 bg-[#f6f6f6] border border-[#dfdfdf] rounded-lg space-y-2 text-xs">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-[#171717]">In Note: <span class="text-[#7f46fc]">${linkInfo.sourceName}</span></span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">${linkInfo.fullMatch}</span>
+                        </div>
+                        <div class="text-[11px] text-[#646464] italic bg-white p-2 rounded border border-[#dfdfdf]">
+                            "${linkInfo.paragraph}"
+                        </div>
+                        <div class="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-2 pt-1 items-start md:items-center">
+                            
+                            <!-- Step 1: Note Selection -->
+                            <div class="flex-1 w-full">
+                                <label class="block text-[9px] font-bold text-[#646464] uppercase tracking-wider mb-0.5">Page Selection</label>
+                                <select id="${selectId}" onchange="onBrokenPageSelectChange(${idx})" class="w-full bg-[#ffffff] border border-[#dfdfdf] rounded p-1 text-xs text-[#171717]">
+                                    <!-- Populated dynamically -->
+                                </select>
+                            </div>
+
+                            <!-- Step 2: Chapter Selection -->
+                            <div id="${chapterContainerId}" class="flex-1 w-full hidden">
+                                <label class="block text-[9px] font-bold text-[#646464] uppercase tracking-wider mb-0.5">Chapter (Optional)</label>
+                                <select id="${chapterSelectId}" class="w-full bg-[#ffffff] border border-[#dfdfdf] rounded p-1 text-xs text-[#171717]">
+                                    <!-- Populated dynamically based on selected page -->
+                                </select>
+                            </div>
+
+                            <button onclick="resolveBrokenLinkFromManager('${escapedSourcePath}', '${escapedFullMatch}', ${idx}, '${escapedAliasName}')" class="px-4 py-1.5 bg-[#171717] hover:bg-[#333333] text-white rounded text-xs font-semibold transition self-end shadow-sm">
+                                Link Path
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                // Populate Step 1 dropdown list
+                populatePagesDropdown(selectId);
+            });
+
+            safeToggleClass('broken-links-modal', 'hidden', false);
+            initializeLucide();
+        }
+
+        function onBrokenPageSelectChange(idx) {
+            const pageSelect = document.getElementById(`broken-page-select-${idx}`);
+            const chapterContainer = document.getElementById(`broken-chapter-container-${idx}`);
+            const chapterSelect = document.getElementById(`broken-chapter-select-${idx}`);
+
+            if (!pageSelect || !chapterContainer || !chapterSelect) return;
+
+            const selectedPageName = pageSelect.value;
+            if (!selectedPageName) {
+                chapterContainer.classList.add('hidden');
+                chapterSelect.innerHTML = '';
+                return;
+            }
+
+            const path = locatePathByNoteName(selectedPageName);
+            const file = vaultData.files[path];
+            if (file) {
+                const headings = extractHeadingsFromMarkdown(file.content);
+                if (headings.length > 0) {
+                    chapterSelect.innerHTML = '<option value="">-- Direct Link to Page (No Chapter) --</option>';
+                    headings.forEach(h => {
+                        const opt = document.createElement('option');
+                        opt.value = h;
+                        opt.textContent = h;
+                        chapterSelect.appendChild(opt);
+                    });
+                    chapterContainer.classList.remove('hidden');
+                } else {
+                    chapterContainer.classList.add('hidden');
+                    chapterSelect.innerHTML = '';
+                }
+            } else {
+                chapterContainer.classList.add('hidden');
+                chapterSelect.innerHTML = '';
+            }
+        }
+
+        async function resolveBrokenLinkFromManager(sourcePath, fullMatch, idx, aliasName) {
+            const pageSelect = document.getElementById(`broken-page-select-${idx}`);
+            const chapterSelect = document.getElementById(`broken-chapter-select-${idx}`);
+
+            if (!pageSelect || !pageSelect.value) {
+                showNotification("Please select an existing target note first.", "warning");
+                return;
+            }
+
+            let chosenName = pageSelect.value;
+            if (chapterSelect && chapterSelect.value) {
+                chosenName += `#${chapterSelect.value}`;
+            }
+
+            await applyLinkRewrite(sourcePath, fullMatch, chosenName, aliasName);
+            
+            // Re-open/refresh manager pane
+            openBrokenLinksModal();
+        }
+
+        function closeBrokenLinksModal() {
+            safeToggleClass('broken-links-modal', 'hidden', true);
+        }
+
+        function updateWordMetrics(text) {
+            const clean = (text || "").trim();
+            const words = clean === "" ? 0 : clean.split(/\s+/).length;
+            const characters = (text || "").length;
+
+            safeSetText('status-word-count', `${words.toLocaleString()} Words`);
+            safeSetText('status-char-count', `${characters.toLocaleString()} Characters`);
+
+            let backlinksCount = 0;
+            const activeTab = openTabs[activeTabIndex];
+            if (activeTab && activeTab.type === 'note') {
+                const file = vaultData.files[activeTab.path];
+                if (file) {
+                    Object.keys(vaultData.files).forEach(p => {
+                        if (p === activeTab.path) return;
+                        const f = vaultData.files[p];
+                        const linkRegex = new RegExp(`\\[\\[${escapeRegExp(file.name)}(\\|.*?)?\\]\\]`, 'i');
+                        if (linkRegex.test(f.content || "")) {
+                            backlinksCount++;
+                        }
+                    });
+                }
+            }
+            safeSetText('status-backlinks-count', `${backlinksCount} ${backlinksCount === 1 ? 'Backlink' : 'Backlinks'}`);
+        }
+
+        function updateStatusBar() {
+            const count = Object.keys(vaultData.files).length;
+            safeSetText('status-file-count', `${count} Notes`);
+            safeSetText('status-vault-info', vaultData.title);
+        }
+
+        window.onload = function() {
+            initializeLucide();
+            initializeSplitResizer();
+        };
+
+        window.onresize = function() {
+            if (openTabs[activeTabIndex] && openTabs[activeTabIndex].type === 'graph') {
+                renderFullscreenGraph();
+            }
+        };
+    </script>
+</body>
+</html>
